@@ -1,0 +1,7 @@
+# Room configuration file
+# Format: <room_usd_path> <room_grid_npy_path>
+# Lines starting with # are comments
+#
+# Example:
+# /path/to/room1.usd /path/to/room1_grid.npy
+# /path/to/room2.usd /path/to/room2_grid.npy

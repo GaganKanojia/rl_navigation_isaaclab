@@ -1,0 +1,35 @@
+# Copyright (c) 2022-2025, The Isaac Lab Project Developers (https://github.com/isaac-sim/IsaacLab/blob/main/CONTRIBUTORS.md).
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
+# ROS2 bridge configuration for Create 3 navigation simulation.
+# These values are defaults used by SimBridgeNode.
+
+# iRobot Create 3 kinematic parameters
+robot:
+  wheel_base: 0.233      # metres between wheel centres
+  wheel_radius: 0.036    # metres
+  max_linear_vel: 0.5    # m/s
+  max_angular_vel: 1.9   # rad/s
+
+# Topic names
+topics:
+  scan: "/scan"
+  rgb_image: "/camera/rgb/image_raw"
+  depth_image: "/camera/depth/image_raw"
+  occupancy_grid: "/occupancy_grid"
+  cmd_vel: "/cmd_vel"
+  goal_pose: "/goal_pose"
+
+# Frame IDs for TF
+frames:
+  base: "base_link"
+  camera: "camera_link"
+  lidar: "base_link"
+  map: "map"
+
+# Teleop defaults
+teleop:
+  linear_vel: 0.3        # m/s per keypress
+  angular_vel: 1.0       # rad/s per keypress
