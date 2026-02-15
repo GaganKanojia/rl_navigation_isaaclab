@@ -3,7 +3,7 @@
 *.tmp
 # ignore docker
 # ignore __pycache__
-**/__pycache__/
+**/__pycache__/**
 **/*.egg-info/
 # ignore isaac sim symlink
 _isaac_sim?
