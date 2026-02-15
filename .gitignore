@@ -8,5 +8,6 @@
 # ignore isaac sim symlink
 _isaac_sim?
 CLAUDE.md
+*.claude/
 .dockerignore
 
