@@ -48,10 +48,17 @@ class NavigationEnv(DirectRLEnv):
         self._goal_pos = torch.zeros(self.num_envs, 2, device=self.device)
         self._prev_goal_dist = torch.zeros(self.num_envs, device=self.device)
 
-        # Load occupancy grid
-        rooms = load_room_list(self.cfg.rooms_txt_path)
-        room = rooms[self.cfg.room_index]
-        self._occ_grid = load_occupancy_grid(room["grid_path"], self.device)
+        # Load occupancy grid (required for RL training, optional for Nav2 mode)
+        if self.cfg.require_occupancy_grid:
+            rooms = load_room_list(self.cfg.rooms_txt_path)
+            room = rooms[self.cfg.room_index]
+            self._occ_grid = load_occupancy_grid(room["grid_path"], self.device)
+        else:
+            from rl_navigation.utils.occupancy_grid import OccupancyGrid
+
+            empty = torch.zeros(100, 100, device=self.device)
+            self._occ_grid = OccupancyGrid(grid=empty, resolution=self.cfg.grid_resolution, origin=(0.0, 0.0))
+            print("[NavigationEnv] Occupancy grid not required — using empty grid (Nav2/SLAM mode).")
 
         # Episode reward tracking for logging
         self._reward_keys = ["goal_reached", "distance_progress", "collision", "time_penalty", "smoothness"]
@@ -64,25 +71,26 @@ class NavigationEnv(DirectRLEnv):
         self._robot = Articulation(self.cfg.robot_cfg)
         self.scene.articulations["robot"] = self._robot
 
-        # Lidar
+        # Lidar (attaches to existing prim, no spawn needed)
         self._lidar = RayCaster(self.cfg.lidar_cfg)
         self.scene.sensors["lidar"] = self._lidar
 
-        # Camera (opt-in, excluded from training observation space)
-        self._camera = None
-        if self.cfg.enable_camera and self.cfg.camera_cfg is not None:
-            self._camera = Camera(self.cfg.camera_cfg)
-            self.scene.sensors["camera"] = self._camera
-
-        # Terrain (room)
+        # Terrain (room) — must be set up before clone so robot prims exist on stage
         self.cfg.terrain.num_envs = self.scene.cfg.num_envs
         self.cfg.terrain.env_spacing = self.scene.cfg.env_spacing
         self._terrain = self.cfg.terrain.class_type(self.cfg.terrain)
 
-        # Clone environments
+        # Clone environments (spawns robot prims on stage)
         self.scene.clone_environments(copy_from_source=False)
         if self.device == "cpu":
             self.scene.filter_collisions(global_prim_paths=[self.cfg.terrain.prim_path])
+
+        # Camera (opt-in) — created after clone because it spawns a prim
+        # under the robot's base_link, which must already exist on stage
+        self._camera = None
+        if self.cfg.enable_camera and self.cfg.camera_cfg is not None:
+            self._camera = Camera(self.cfg.camera_cfg)
+            self.scene.sensors["camera"] = self._camera
 
         # Lights
         light_cfg = sim_utils.DomeLightCfg(intensity=2000.0, color=(0.75, 0.75, 0.75))
@@ -194,6 +202,11 @@ class NavigationEnv(DirectRLEnv):
         return total_reward
 
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
+        if not self.cfg.enable_collision_termination:
+            # Nav2 mode: never terminate (Nav2 handles obstacle avoidance, episode is indefinite)
+            false_tensor = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+            return false_tensor, false_tensor
+
         robot_local_xy = self._robot.data.root_pos_w[:, :2] - self.scene.env_origins[:, :2]
         goal_dist = torch.norm(self._goal_pos - robot_local_xy, dim=-1)
 
@@ -218,11 +231,15 @@ class NavigationEnv(DirectRLEnv):
 
         num_resets = len(env_ids)
 
-        # Sample robot start positions in free space
-        start_positions = self._occ_grid.sample_free_positions(num_resets, self.device)
+        if self.cfg.require_occupancy_grid:
+            # RL training: sample random start and goal in free space
+            start_positions = self._occ_grid.sample_free_positions(num_resets, self.device)
+            goal_positions = self._sample_goals(start_positions)
+        else:
+            # Nav2 mode: fixed spawn at origin, dummy goal (Nav2 manages goals)
+            start_positions = torch.zeros(num_resets, 2, device=self.device)
+            goal_positions = torch.zeros(num_resets, 2, device=self.device)
 
-        # Sample goal positions at valid distances
-        goal_positions = self._sample_goals(start_positions)
         self._goal_pos[env_ids] = goal_positions
 
         # Set robot root state

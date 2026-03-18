@@ -16,6 +16,7 @@ robot:
 # Topic names
 topics:
   scan: "/scan"
+  odom: "/odom"
   rgb_image: "/camera/rgb/image_raw"
   depth_image: "/camera/depth/image_raw"
   occupancy_grid: "/occupancy_grid"
@@ -25,9 +26,13 @@ topics:
 # Frame IDs for TF
 frames:
   base: "base_link"
+  odom: "odom"
   camera: "camera_link"
-  lidar: "base_link"
+  lidar: "laser_frame"
   map: "map"
+
+# Safety timeout: zero cmd_vel if no message received within this period (seconds)
+cmd_vel_timeout: 0.5
 
 # Teleop defaults
 teleop:

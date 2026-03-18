@@ -9,9 +9,9 @@ from isaaclab.sensors import RayCasterCfg
 from isaaclab.sensors.ray_caster import patterns
 
 LIDAR_CFG = RayCasterCfg(
-    prim_path="/World/envs/env_.*/Robot/base_link",
+    prim_path="/World/envs/env_.*/Robot/create_3/base_link",
     offset=RayCasterCfg.OffsetCfg(pos=(0.0, 0.0, 0.12)),
-    attach_yaw_only=True,
+    ray_alignment="yaw",
     pattern_cfg=patterns.LidarPatternCfg(
         channels=1,
         vertical_fov_range=(0.0, 0.0),

@@ -11,9 +11,11 @@ from isaaclab.assets import ArticulationCfg
 
 CREATE3_CFG = ArticulationCfg(
     spawn=sim_utils.UsdFileCfg(
-        usd_path="PLACEHOLDER_USD_PATH",  # Replace with actual Create 3 USD path
+        usd_path="/workspace/rl_isaaclab/rl_navigation/config/irobot_rvc.usd",
+        activate_contact_sensors=True,
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
             rigid_body_enabled=True,
+            disable_gravity=False,
             max_linear_velocity=2.0,
             max_angular_velocity=5.0,
             max_depenetration_velocity=1.0,
@@ -23,10 +25,15 @@ CREATE3_CFG = ArticulationCfg(
             enabled_self_collisions=False,
             solver_position_iteration_count=4,
             solver_velocity_iteration_count=1,
+            fix_root_link=False,
+        ),
+        collision_props=sim_utils.CollisionPropertiesCfg(
+            contact_offset=0.005,
+            rest_offset=0.0,
         ),
     ),
     init_state=ArticulationCfg.InitialStateCfg(
-        pos=(0.0, 0.0, 0.0),
+        pos=(0.0, 0.0, 0.05),
         joint_pos={
             "left_wheel_joint": 0.0,
             "right_wheel_joint": 0.0,

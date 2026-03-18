@@ -49,7 +49,7 @@ class NavigationEnvCfg(DirectRLEnvCfg):
     terrain = TerrainImporterCfg(
         prim_path="/World/ground",
         terrain_type="usd",
-        usd_path="PLACEHOLDER_ROOM_USD_PATH",
+        usd_path="/workspace/rl_isaaclab/rl_navigation/config/simple_room.usd",
     )
 
     # --- Scene ---
@@ -79,6 +79,8 @@ class NavigationEnvCfg(DirectRLEnvCfg):
     room_index: int = 0
     grid_resolution: float = 0.1
     local_patch_size: int = 50
+    require_occupancy_grid: bool = True  # False for Nav2 mode (SLAM builds the map)
+    enable_collision_termination: bool = True  # False for Nav2 mode (Nav2 handles obstacle avoidance)
 
     # --- Goal ---
     goal_radius: float = 0.3

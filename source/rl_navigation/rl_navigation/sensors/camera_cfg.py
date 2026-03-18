@@ -9,7 +9,7 @@ import isaaclab.sim as sim_utils
 from isaaclab.sensors import CameraCfg
 
 CAMERA_CFG = CameraCfg(
-    prim_path="/World/envs/env_.*/Robot/base_link/front_camera",
+    prim_path="/World/envs/env_.*/Robot/create_3/base_link/front_camera",
     offset=CameraCfg.OffsetCfg(
         pos=(0.12, 0.0, 0.10),
         rot=(0.5, -0.5, 0.5, -0.5),
