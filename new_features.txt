@@ -1,0 +1,17 @@
+Analze and explain the functionality of the codebase in the current folder.
+Add the functionality to compute the grid map by exploring the environment and using the lidar data.
+- Explore the environment using frontier-based approach and controller in nav2 library
+- The codebase should interact with the nav2 library via ros2 messages.
+- The robot should move in the isaac sim environment and publish the current data.
+- The current data is then used by the mapping and navigation algorithm in the nav2 library.
+- The nav2 library should provide the velocity commands via cmd_vel top which should be used by the robot to move in isaac sim.
+
+Add the functionality to move the robot to a specific goal location provided to it through a topic.
+- The robot should utilize the nav2 library through ros2 messages to plan and generate cmd_vel data.
+- The robot should move in the isaac sim as per the received cmd_vel data
+- The robot should provide the observation data to nav2 library through ros messages.
+
+Provide the list of commands of nav2 library to be run in parallel with the simulator
+
+Rename CLAUDE.md to README.md
+Add a CHANGELIST.md file and update it.

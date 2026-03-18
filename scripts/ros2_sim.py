@@ -5,6 +5,8 @@
 
 """Launch a single-env navigation simulation with a ROS2 bridge.
 
+Uses Isaac Sim's built-in OmniGraph ROS2 bridge — no direct rclpy dependency.
+
 Operating modes:
     --manual              Zero actions unless /cmd_vel override (no trained agent).
     --checkpoint=<path>   Trained PPO agent controls the robot.
@@ -50,14 +52,16 @@ from isaaclab_tasks.utils import parse_env_cfg
 import rl_navigation.tasks  # noqa: F401
 from rl_navigation.ros2_bridge import SimBridgeNode
 
-import rclpy
-
 
 def main():
     """Run single-env simulation with ROS2 bridge."""
     # Parse environment config
     env_cfg = parse_env_cfg(args_cli.task, device=args_cli.device, num_envs=1, use_fabric=not args_cli.disable_fabric)
     env_cfg.enable_camera = True
+    # ROS2 bridge mode: SLAM builds the map, no precomputed grid needed
+    env_cfg.require_occupancy_grid = False
+    # Don't terminate on collision in bridge mode
+    env_cfg.enable_collision_termination = False
 
     # Create environment
     env = gym.make(args_cli.task, cfg=env_cfg)
@@ -74,29 +78,22 @@ def main():
         agent = PPO.load(args_cli.checkpoint, env=sb3_env, device=unwrapped.device)
         print(f"[INFO]: Loaded checkpoint: {args_cli.checkpoint}")
 
-    # Initialise ROS2
-    rclpy.init()
-    bridge = SimBridgeNode(unwrapped, max_wheel_vel=env_cfg.max_wheel_vel)
-
-    print("[INFO]: ROS2 bridge started. Topics:")
-    print("  Publishers:  /scan, /camera/rgb/image_raw, /camera/depth/image_raw, /occupancy_grid")
-    print("  Subscribers: /cmd_vel, /goal_pose")
-
-    # Reset environment
+    # Reset environment first (scene must exist before creating OmniGraph)
     obs, _ = env.reset()
     sim_dt = env_cfg.sim.dt * env_cfg.decimation
+
+    # Create OmniGraph ROS2 bridge (no rclpy.init() needed)
+    bridge = SimBridgeNode(unwrapped, max_wheel_vel=env_cfg.max_wheel_vel)
+
+    print("[INFO]: OmniGraph ROS2 bridge started. Topics:")
+    print("  Publishers:  /scan, /odom, /tf, /tf_static, /clock")
+    print("  Subscribers: /cmd_vel")
 
     try:
         while simulation_app.is_running():
             step_start = time.perf_counter()
 
             with torch.inference_mode():
-                # Process ROS2 callbacks (non-blocking)
-                rclpy.spin_once(bridge, timeout_sec=0.0)
-
-                # Apply external goal if received
-                bridge.apply_external_goal()
-
                 # Determine action
                 action_override = bridge.get_action_override()
 
@@ -117,12 +114,11 @@ def main():
                     # No agent, no manual flag — just zero actions
                     actions = torch.zeros(1, 2, device=unwrapped.device)
 
-                # Step the environment
+                # Step the environment (triggers OnPlaybackTick -> OmniGraph publishes odom, TF, clock)
                 obs, _, _, _, _ = env.step(actions)
 
-                # Publish sensor data
-                sim_time = unwrapped.episode_length_buf[0].item() * sim_dt
-                bridge.publish_sensor_data(sim_time)
+                # Update sensor data that OmniGraph can't read automatically (LaserScan from RayCaster)
+                bridge.publish_sensor_data(0.0)
 
             # Real-time pacing
             elapsed = time.perf_counter() - step_start
@@ -134,7 +130,6 @@ def main():
         print("\n[INFO]: Shutting down...")
     finally:
         bridge.destroy_node()
-        rclpy.shutdown()
         env.close()
 
 

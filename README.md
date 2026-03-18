@@ -1,15 +1,11 @@
-# CLAUDE.md
-
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
-## Project Overview
+# RL Navigation — Isaac Lab Extension
 
 Isaac Lab extension for RL navigation. Implements two environments using NVIDIA Isaac Sim and Isaac Lab:
 
 1. **CartPole baseline** (`Template-Rl-Navigation-Direct-v0`) — simple 1-DOF cart-pole balancing task.
 2. **Create 3 Navigation** (`Create3-Navigation-Direct-v0`) — goal-conditioned navigation for an iRobot Create 3 differential-drive robot with lidar, occupancy grid, and a custom CNN feature extractor.
 
-The project is structured as an isolated extension outside the core Isaac Lab repository. Requires Python 3.10+, Isaac Sim 4.5+, and an active Isaac Lab conda environment.
+The project is structured as an isolated extension outside the core Isaac Lab repository. Requires Python 3.10+ and Isaac Sim 4.5+.
 
 ## Commands
 
@@ -64,12 +60,17 @@ Extension metadata (version, author, etc.) lives in `source/rl_navigation/config
 rl_navigation/
 ├── config/
 │   ├── rooms.txt                          # Room USD + grid path pairs
-│   └── ros2_bridge.yaml                   # ROS2 topic names, kinematic params
+│   ├── ros2_bridge.yaml                   # ROS2 topic names, kinematic params
+│   └── nav2/                              # Nav2 stack configuration
+│       ├── nav2_params.yaml               # Nav2 controller, planner, costmaps
+│       ├── slam_toolbox_params.yaml       # SLAM Toolbox parameters
+│       └── exploration_params.yaml        # Frontier exploration parameters
 ├── scripts/
 │   ├── sb3/train.py                       # SB3 PPO training loop
 │   ├── sb3/play.py                        # Inference/playback
 │   ├── precompute_grid.py                 # Offline occupancy grid generation
 │   ├── ros2_sim.py                        # Single-env sim + ROS2 bridge
+│   ├── ros2_nav2_sim.py                   # Nav2 integration (exploration + navigation)
 │   ├── ros2_teleop.py                     # Keyboard teleop (/cmd_vel)
 │   ├── zero_agent.py                      # Zero-action baseline
 │   └── random_agent.py                    # Random-action baseline
@@ -118,25 +119,25 @@ rl_navigation/
 
 ## ROS2 Bridge (Inference / Visualization)
 
-The ROS2 bridge runs a single-env simulation connected to ROS2 topics. It is **not** part of the training pipeline.
+The ROS2 bridge runs a single-env simulation connected to ROS2 topics via Isaac Sim's built-in **OmniGraph ROS2 bridge** (`isaacsim.ros2.bridge` extension). It does **not** import `rclpy` directly, avoiding Python version conflicts between Isaac Sim (Python 3.11) and ROS2 Jazzy (Python 3.12). It is **not** part of the training pipeline.
 
 ### Prerequisites
 
-- ROS2 Jazzy installed (`source /opt/ros/jazzy/setup.bash`)
-- Isaac Lab conda environment active
+- Isaac Sim 5.1+ with `isaacsim.ros2.bridge` extension enabled
+- ROS2 Jazzy installed for Nav2/SLAM nodes (`source /opt/ros/jazzy/setup.bash`)
 - Extension installed (`pip install -e source/rl_navigation`)
 
 ### Commands
 
 ```bash
 # Manual control via /cmd_vel (no trained agent)
-python scripts/ros2_sim.py --task=Create3-Navigation-Direct-v0 --manual
+python scripts/ros2_sim.py --task=Create3-Navigation-Direct-v0 --manual --disable_fabric
 
 # Trained agent controls the robot
-python scripts/ros2_sim.py --task=Create3-Navigation-Direct-v0 --checkpoint=logs/sb3/Create3-Navigation-Direct-v0/model.zip
+python scripts/ros2_sim.py --task=Create3-Navigation-Direct-v0 --checkpoint=logs/sb3/Create3-Navigation-Direct-v0/model.zip --disable_fabric
 
 # Agent controls, but /cmd_vel can override
-python scripts/ros2_sim.py --checkpoint=<path> --allow-override
+python scripts/ros2_sim.py --checkpoint=<path> --allow-override --disable_fabric
 
 # Keyboard teleop (run in a separate terminal)
 python scripts/ros2_teleop.py
@@ -147,36 +148,166 @@ python scripts/ros2_teleop.py
 | Topic | Type | Direction | QoS |
 |---|---|---|---|
 | `/scan` | `sensor_msgs/LaserScan` | Published | Best-effort |
+| `/odom` | `nav_msgs/Odometry` | Published | Best-effort |
+| `/tf` | `tf2_msgs/TFMessage` | Published | Best-effort |
+| `/tf_static` | `tf2_msgs/TFMessage` | Published (once) | Transient-local |
 | `/camera/rgb/image_raw` | `sensor_msgs/Image` (rgb8) | Published | Best-effort |
 | `/camera/depth/image_raw` | `sensor_msgs/Image` (32FC1) | Published | Best-effort |
 | `/occupancy_grid` | `nav_msgs/OccupancyGrid` | Published once | Transient-local |
 | `/cmd_vel` | `geometry_msgs/Twist` | Subscribed | Best-effort |
 | `/goal_pose` | `geometry_msgs/PoseStamped` | Subscribed | Best-effort |
 
+### TF Tree
+
+The bridge publishes the following TF tree for Nav2 compatibility:
+
+```
+map → odom              (published by slam_toolbox)
+  odom → base_link      (published by SimBridgeNode, dynamic)
+    base_link → laser_frame   (published by SimBridgeNode, static)
+    base_link → camera_link   (published by SimBridgeNode, static)
+```
+
 ### Architecture
 
 ```
 source/rl_navigation/rl_navigation/
 ├── ros2_bridge/
-│   ├── __init__.py              # Conditional import (graceful if no rclpy)
-│   └── sim_bridge_node.py       # SimBridgeNode ROS2 node
+│   ├── __init__.py              # Direct import (no rclpy dependency)
+│   └── sim_bridge_node.py       # SimBridgeNode (OmniGraph-based)
 ├── sensors/
 │   ├── lidar_cfg.py             # LIDAR_CFG (360° planar)
 │   └── camera_cfg.py            # CAMERA_CFG (front RGB-D, 320×240)
 scripts/
 ├── ros2_sim.py                  # Single-env sim + ROS2 bridge
+├── ros2_nav2_sim.py             # Nav2 integration bridge
 └── ros2_teleop.py               # Keyboard teleop (/cmd_vel)
 config/
-└── ros2_bridge.yaml             # Topic names, kinematic params
+├── ros2_bridge.yaml             # Topic names, kinematic params
+└── nav2/                        # Nav2 stack configuration
+    ├── nav2_params.yaml
+    ├── slam_toolbox_params.yaml
+    └── exploration_params.yaml
 ```
 
 **Key design decisions:**
 - ROS2 bridge is standalone — runs with `num_envs=1`, not part of training
 - Camera excluded from training observation space (320×240 RGBD × 4096 envs = ~2.4GB GPU memory)
-- `rclpy` import is conditional — training works without ROS2 installed
-- `/cmd_vel` persists last command (continuous velocity, matching ROS conventions)
-- Occupancy grid published once with transient-local QoS (late subscribers get it immediately)
+- Bridge uses OmniGraph (`isaacsim.ros2.bridge` extension) — no direct `rclpy` import, avoids Python version conflicts
+- Odometry and TF driven automatically by `IsaacComputeOdometry` OmniGraph node from USD prim data
+- LaserScan depth data fed from Isaac Lab's RayCaster sensor each step
+- `/cmd_vel` persists last command with safety timeout (0.5s) — zeros velocity if no new command received
+- TF, odometry, and clock published every tick by OmniGraph; only scan data requires Python update
 - Create 3 kinematics: wheel_base=0.233m, wheel_radius=0.036m (configured in `config/ros2_bridge.yaml`)
+
+## Nav2 Integration
+
+The project integrates with the Nav2 stack for autonomous navigation and exploration. Nav2 runs as separate ROS2 processes and communicates with the Isaac Sim bridge via standard ROS2 topics.
+
+### Prerequisites
+
+Install the required ROS2 packages:
+
+```bash
+# Nav2 and SLAM
+sudo apt install ros-jazzy-navigation2 ros-jazzy-nav2-bringup
+sudo apt install ros-jazzy-slam-toolbox
+sudo apt install ros-jazzy-tf2-ros
+
+# Frontier explorer (build from source if not available as binary)
+cd ~/ros2_ws/src
+git clone https://github.com/robo-friends/m-explore-next.git
+cd ~/ros2_ws
+colcon build --packages-select explore_lite
+source install/setup.bash
+```
+
+### Important: `--disable_fabric` Flag
+
+The OmniGraph ROS2 nodes (`IsaacComputeOdometry`, `ROS2PublishRawTransformTree`, etc.) read robot pose data from the **USD stage**. By default, Isaac Sim uses **Fabric** — a high-performance GPU runtime layer that bypasses USD for faster physics/rendering. With Fabric enabled, prim transforms may not be written back to the USD stage, causing OmniGraph nodes to read stale or zero values for odometry and TF.
+
+**Use `--disable_fabric` when running with the ROS2 bridge** to ensure OmniGraph nodes can read up-to-date prim data. This is not needed for RL training (which doesn't use OmniGraph).
+
+### Frontier-Based Exploration
+
+Autonomously explore and map the environment using frontier-based exploration. The robot uses SLAM to build a map from lidar data, and the frontier explorer selects unexplored regions as goals for Nav2.
+
+Run each command in a separate terminal:
+
+```bash
+# Terminal 1 — Isaac Sim bridge (--disable_fabric required for OmniGraph ROS2 nodes)
+python scripts/ros2_nav2_sim.py --mode exploration --disable_fabric
+
+# Terminal 2 — SLAM Toolbox (builds map from lidar)
+ros2 launch slam_toolbox online_async_launch.py \
+  params_file:=$(pwd)/config/nav2/slam_toolbox_params.yaml
+
+# Terminal 3 — Nav2 stack (path planning + obstacle avoidance)
+ros2 launch nav2_bringup navigation_launch.py \
+  params_file:=$(pwd)/config/nav2/nav2_params.yaml use_sim_time:=false
+
+# Terminal 4 — Frontier explorer (selects exploration goals)
+ros2 launch explore_lite explore.launch.py
+
+# Terminal 5 (optional) — RViz2 visualization
+ros2 launch nav2_bringup rviz_launch.py
+```
+
+**Data flow:**
+```
+Isaac Sim → /scan, /odom, /tf → SLAM Toolbox → /map
+                                                 ↓
+Frontier Explorer ← /map                    Nav2 ← /map, /scan, /tf
+        ↓                                         ↓
+    /goal_pose → Nav2 → /cmd_vel → Isaac Sim (robot moves)
+```
+
+### Goal-Directed Navigation
+
+Navigate the robot to a specific goal location using Nav2 for path planning.
+
+Run each command in a separate terminal:
+
+```bash
+# Terminal 1 — Isaac Sim bridge (--disable_fabric required for OmniGraph ROS2 nodes)
+python scripts/ros2_nav2_sim.py --mode navigation --disable_fabric
+
+# Terminal 2 — SLAM Toolbox
+ros2 launch slam_toolbox online_async_launch.py \
+  params_file:=$(pwd)/config/nav2/slam_toolbox_params.yaml
+
+# Terminal 3 — Nav2 stack
+ros2 launch nav2_bringup navigation_launch.py \
+  params_file:=$(pwd)/config/nav2/nav2_params.yaml use_sim_time:=false
+
+# Terminal 4 (optional) — RViz2 visualization
+ros2 launch nav2_bringup rviz_launch.py
+```
+
+Send a goal via CLI:
+
+```bash
+ros2 topic pub --once /goal_pose geometry_msgs/PoseStamped \
+  "{header: {frame_id: 'map'}, pose: {position: {x: 3.0, y: 2.0, z: 0.0}, orientation: {w: 1.0}}}"
+```
+
+Or use the RViz2 **"2D Goal Pose"** button to set goals interactively.
+
+### Nav2 Configuration
+
+All Nav2 configuration files are in `config/nav2/`:
+
+| File | Description |
+|---|---|
+| `nav2_params.yaml` | DWB controller, NavFn planner, costmaps, recovery behaviors — tuned for Create 3 kinematics |
+| `slam_toolbox_params.yaml` | Online async SLAM with 360° lidar, 12m range, loop closure enabled |
+| `exploration_params.yaml` | Frontier explorer (m-explore-next) parameters |
+
+Key parameters matching Create 3 kinematics:
+- `max_vel_x: 0.5 m/s`, `max_vel_theta: 1.9 rad/s`
+- `robot_radius: 0.17 m`
+- Costmap resolution: 0.05 m/cell
+- Inflation radius: 0.30 m
 
 ## Training Logs
 
