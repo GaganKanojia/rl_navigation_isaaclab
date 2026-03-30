@@ -82,6 +82,7 @@ class NavigationEnv(DirectRLEnv):
 
         # Clone environments (spawns robot prims on stage)
         self.scene.clone_environments(copy_from_source=False)
+        # filter_collisions is only needed on CPU; GPU PhysX handles it natively
         if self.device == "cpu":
             self.scene.filter_collisions(global_prim_paths=[self.cfg.terrain.prim_path])
 
@@ -152,11 +153,6 @@ class NavigationEnv(DirectRLEnv):
             dim=-1,
         )  # (N, 3)
 
-        # Cache camera data for ROS2 bridge (not part of policy observations)
-        if self._camera is not None:
-            self._last_rgb = self._camera.data.output["rgb"]  # (N, H, W, 3) uint8
-            self._last_depth = self._camera.data.output["distance_to_camera"]  # (N, H, W, 1) float32
-
         observations = {
             "policy": {
                 "lidar": lidar_obs,
@@ -225,7 +221,7 @@ class NavigationEnv(DirectRLEnv):
         return terminated, time_out
 
     def _reset_idx(self, env_ids: Sequence[int] | None):
-        if env_ids is None or len(env_ids) == self.num_envs:
+        if env_ids is None:
             env_ids = self._robot._ALL_INDICES
         super()._reset_idx(env_ids)
 
@@ -247,12 +243,13 @@ class NavigationEnv(DirectRLEnv):
         default_root_state[:, 0] = start_positions[:, 0] + self.scene.env_origins[env_ids, 0]
         default_root_state[:, 1] = start_positions[:, 1] + self.scene.env_origins[env_ids, 1]
 
-        # Random yaw
-        random_yaw = torch.rand(num_resets, device=self.device) * 2 * math.pi - math.pi
-        default_root_state[:, 3] = torch.cos(random_yaw / 2)  # quat w
-        default_root_state[:, 4] = 0.0  # quat x
-        default_root_state[:, 5] = 0.0  # quat y
-        default_root_state[:, 6] = torch.sin(random_yaw / 2)  # quat z
+        # Random yaw only in RL training mode; Nav2 mode keeps default orientation (+X)
+        if self.cfg.require_occupancy_grid:
+            random_yaw = torch.rand(num_resets, device=self.device) * 2 * math.pi - math.pi
+            default_root_state[:, 3] = torch.cos(random_yaw / 2)  # quat w
+            default_root_state[:, 4] = 0.0  # quat x
+            default_root_state[:, 5] = 0.0  # quat y
+            default_root_state[:, 6] = torch.sin(random_yaw / 2)  # quat z
 
         # Zero velocities
         default_root_state[:, 7:] = 0.0
