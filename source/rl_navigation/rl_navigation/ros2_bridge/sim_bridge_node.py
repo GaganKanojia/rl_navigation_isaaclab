@@ -8,15 +8,21 @@
 Uses Isaac Sim's built-in ROS2 bridge extension (isaacsim.ros2.bridge) via
 OmniGraph instead of direct rclpy usage.  This avoids Python version conflicts
 between Isaac Sim (Python 3.11) and system ROS2 Jazzy (Python 3.12).
+
+The ``/scan`` topic is published by an **RTX Lidar** sensor which ray-traces
+against *all* scene geometry (walls, obstacles, furniture, etc.) rather than the
+Isaac Lab RayCaster which only ray-traces against explicitly specified meshes.
 """
 
 from __future__ import annotations
 
-import numpy as np
 import torch
 
 import omni.graph.core as og
+import omni.kit.commands
+import omni.replicator.core as rep
 import usdrt.Sdf
+from pxr import Gf
 
 # Create 3 kinematic parameters
 WHEEL_BASE = 0.233  # metres between wheel centres
@@ -25,6 +31,9 @@ WHEEL_RADIUS = 0.036  # metres
 # OmniGraph path for the ROS2 bridge graph
 GRAPH_PATH = "/ROS2Bridge"
 
+# RTX Lidar prim path (created under the robot's base_link)
+RTX_LIDAR_PRIM_PATH = "/World/envs/env_0/Robot/create_3/base_link/rtx_lidar"
+
 
 class SimBridgeNode:
     """OmniGraph-based bridge between a single-env ``NavigationEnv`` and ROS2.
@@ -32,14 +41,12 @@ class SimBridgeNode:
     Uses Isaac Sim's built-in OmniGraph ROS2 nodes to publish sensor data and
     subscribe to commands, completely avoiding direct rclpy imports.
 
-    **Automatic publishers** (driven by OmniGraph on each simulation tick):
+    **Fully-automatic publishers** (driven by OmniGraph / RTX pipeline each tick):
+        - ``/scan``  — ``sensor_msgs/LaserScan``  (from RTX Lidar via ROS2RtxLidarHelper)
         - ``/odom``  — ``nav_msgs/Odometry``  (from ``IsaacComputeOdometry``)
-        - ``/tf``    — dynamic ``odom → base_link``
-        - ``/tf_static`` — ``base_link → laser_frame``, ``base_link → camera_link``
+        - ``/tf``    — dynamic ``odom -> base_link``
+        - ``/tf_static`` — ``base_link -> laser_frame``, ``base_link -> camera_link``
         - ``/clock`` — ``rosgraph_msgs/Clock``
-
-    **Python-driven publishers** (data set from env each step):
-        - ``/scan``  — ``sensor_msgs/LaserScan``  (from RayCaster)
 
     **Subscribers** (read from OmniGraph outputs):
         - ``/cmd_vel`` — ``geometry_msgs/Twist``
@@ -58,18 +65,55 @@ class SimBridgeNode:
         # command has ever been seen to distinguish "no publisher" from "commanded stop".
         self._ever_received: bool = False
 
-        # Build the OmniGraph
+        # Build the RTX Lidar sensor and OmniGraph
+        self._render_product_path: str | None = None
+        self._setup_rtx_lidar()
         self._setup_graph()
 
-        print("[OmniGraph ROS2 Bridge] Initialised — publishing sensor data, TF, and odometry.")
+        print("[OmniGraph ROS2 Bridge] Initialised — RTX Lidar publishes /scan, OmniGraph publishes odom/TF/clock.")
 
     # ------------------------------------------------------------------
     # Graph setup
     # ------------------------------------------------------------------
 
+    def _setup_rtx_lidar(self) -> None:
+        """Create an RTX Lidar sensor prim and its render product.
+
+        The RTX Lidar ray-traces against all scene geometry (unlike the Isaac Lab
+        RayCaster which only targets specified mesh prims).  The sensor is created
+        at the robot's base_link with an offset matching the RayCaster config.
+        """
+        from isaacsim.core.utils.extensions import enable_extension
+
+        enable_extension("isaacsim.sensors.rtx")
+
+        # Create RTX Lidar prim using Isaac Sim command
+        # config="Example_Rotary_2D" gives a single-channel 360° rotating lidar
+        _, self._lidar_prim = omni.kit.commands.execute(
+            "IsaacSensorCreateRtxLidar",
+            path=RTX_LIDAR_PRIM_PATH,
+            parent=None,
+            config="Example_Rotary_2D",
+            translation=Gf.Vec3d(0.0, 0.0, 0.12),  # same offset as RayCaster lidar
+            orientation=Gf.Quatd(1, 0, 0, 0),       # identity
+        )
+
+        # Create a render product so the RTX pipeline processes this sensor
+        self._render_product = rep.create.render_product(
+            RTX_LIDAR_PRIM_PATH, resolution=(1, 1)
+        )
+        self._render_product_path = self._render_product.path
+
+        print(f"[OmniGraph ROS2 Bridge] RTX Lidar created at {RTX_LIDAR_PRIM_PATH}")
+        print(f"[OmniGraph ROS2 Bridge] Render product at {self._render_product_path}")
+
     def _setup_graph(self) -> None:
-        """Create the OmniGraph action graph with all ROS2 nodes."""
-        # Ensure required extensions are loaded
+        """Create the OmniGraph action graph with all ROS2 nodes.
+
+        The ``/scan`` topic is published automatically by the ``ROS2RtxLidarHelper``
+        node which reads from the RTX Lidar render product — no Python-side data
+        extraction is needed.
+        """
         from isaacsim.core.utils.extensions import enable_extension
 
         enable_extension("isaacsim.ros2.bridge")
@@ -78,9 +122,6 @@ class SimBridgeNode:
 
         # Resolve robot prim path for env 0
         robot_prim_path = self._env._robot.root_physx_view.prim_paths[0]
-
-        # Get actual ray count from the lidar sensor (may differ from config due to endpoint handling)
-        num_rays = self._env.lidar.data.ray_hits_w.shape[1]
 
         (self._graph, self._nodes, _, _) = og.Controller.edit(
             {"graph_path": GRAPH_PATH, "evaluator_name": "execution"},
@@ -99,8 +140,8 @@ class SimBridgeNode:
                     ("PublishTFLidar", "isaacsim.ros2.bridge.ROS2PublishRawTransformTree"),
                     # --- TF static: base_link -> camera_link ---
                     ("PublishTFCamera", "isaacsim.ros2.bridge.ROS2PublishRawTransformTree"),
-                    # --- LaserScan (data set from Python) ---
-                    ("PublishScan", "isaacsim.ros2.bridge.ROS2PublishLaserScan"),
+                    # --- RTX Lidar -> LaserScan (fully automatic) ---
+                    ("RtxLidarHelper", "isaacsim.ros2.bridge.ROS2RtxLidarHelper"),
                     # --- Clock ---
                     ("PublishClock", "isaacsim.ros2.bridge.ROS2PublishClock"),
                     # --- Cmd_vel subscriber ---
@@ -139,17 +180,12 @@ class SimBridgeNode:
                     # Isaac camera rotation (w,x,y,z)=(0.5,-0.5,0.5,-0.5) -> IJKR (x,y,z,w)=(-0.5,0.5,-0.5,0.5)
                     ("PublishTFCamera.inputs:rotation", [-0.5, 0.5, -0.5, 0.5]),
                     ("PublishTFCamera.inputs:staticPublisher", True),
-                    # LaserScan publisher
-                    ("PublishScan.inputs:topicName", "scan"),
-                    ("PublishScan.inputs:frameId", "laser_frame"),
-                    ("PublishScan.inputs:horizontalFov", 360.0),
-                    ("PublishScan.inputs:horizontalResolution", 360.0 / num_rays),
-                    ("PublishScan.inputs:depthRange", [0.0, 12.0]),
-                    ("PublishScan.inputs:azimuthRange", [0.0, 360.0]),
-                    ("PublishScan.inputs:numRows", 1),
-                    ("PublishScan.inputs:numCols", num_rays),
-                    ("PublishScan.inputs:rotationRate", 0.0),
-                    ("PublishScan.inputs:queueSize", 1),
+                    # RTX Lidar Helper — publishes /scan as LaserScan automatically
+                    ("RtxLidarHelper.inputs:renderProductPath", self._render_product_path),
+                    ("RtxLidarHelper.inputs:topicName", "scan"),
+                    ("RtxLidarHelper.inputs:frameId", "laser_frame"),
+                    ("RtxLidarHelper.inputs:type", "laser_scan"),
+                    ("RtxLidarHelper.inputs:queueSize", 1),
                     # Clock publisher
                     ("PublishClock.inputs:topicName", "clock"),
                     # Twist subscriber
@@ -167,8 +203,8 @@ class SimBridgeNode:
                     # Tick -> static TFs (they only publish once due to staticPublisher=True)
                     ("OnPlaybackTick.outputs:tick", "PublishTFLidar.inputs:execIn"),
                     ("OnPlaybackTick.outputs:tick", "PublishTFCamera.inputs:execIn"),
-                    # Tick -> publish scan
-                    ("OnPlaybackTick.outputs:tick", "PublishScan.inputs:execIn"),
+                    # Tick -> RTX Lidar helper (publishes /scan)
+                    ("OnPlaybackTick.outputs:tick", "RtxLidarHelper.inputs:execIn"),
                     # Tick -> publish clock
                     ("OnPlaybackTick.outputs:tick", "PublishClock.inputs:execIn"),
                     # Tick -> subscribe twist
@@ -178,7 +214,7 @@ class SimBridgeNode:
                     ("Context.outputs:context", "PublishTF.inputs:context"),
                     ("Context.outputs:context", "PublishTFLidar.inputs:context"),
                     ("Context.outputs:context", "PublishTFCamera.inputs:context"),
-                    ("Context.outputs:context", "PublishScan.inputs:context"),
+                    ("Context.outputs:context", "RtxLidarHelper.inputs:context"),
                     ("Context.outputs:context", "PublishClock.inputs:context"),
                     ("Context.outputs:context", "SubscribeTwist.inputs:context"),
                     # --- Timestamp propagation ---
@@ -186,7 +222,6 @@ class SimBridgeNode:
                     ("ReadSimTime.outputs:simulationTime", "PublishTF.inputs:timeStamp"),
                     ("ReadSimTime.outputs:simulationTime", "PublishTFLidar.inputs:timeStamp"),
                     ("ReadSimTime.outputs:simulationTime", "PublishTFCamera.inputs:timeStamp"),
-                    ("ReadSimTime.outputs:simulationTime", "PublishScan.inputs:timeStamp"),
                     ("ReadSimTime.outputs:simulationTime", "PublishClock.inputs:timeStamp"),
                     # --- Odometry data connections ---
                     ("ComputeOdom.outputs:position", "PublishOdom.inputs:position"),
@@ -207,15 +242,15 @@ class SimBridgeNode:
     # ------------------------------------------------------------------
 
     def publish_sensor_data(self, sim_time_s: float) -> None:
-        """Update OmniGraph inputs that can't be driven automatically.
+        """No-op — all sensor publishing is now fully automatic via OmniGraph.
 
-        Currently this sets LaserScan depth data from the RayCaster sensor.
-        Odometry, TF, and clock are driven automatically via OmniGraph connections.
+        The RTX Lidar sensor publishes ``/scan`` through the ``ROS2RtxLidarHelper``
+        node.  Odometry, TF, and clock are driven by other OmniGraph connections.
 
         Args:
-            sim_time_s: Simulation time (unused; timestamps come from ReadSimTime node).
+            sim_time_s: Unused (kept for API compatibility).
         """
-        self._update_scan_data()
+        pass
 
     def get_action_override(self) -> torch.Tensor | None:
         """Read ``/cmd_vel`` from the OmniGraph subscriber and convert to wheel velocities.
@@ -273,36 +308,23 @@ class SimBridgeNode:
         pass
 
     def destroy_node(self) -> None:
-        """Remove the OmniGraph from the USD stage."""
+        """Remove the OmniGraph and RTX Lidar from the USD stage."""
         try:
+            # Destroy render product first
+            if self._render_product is not None:
+                self._render_product.destroy()
+                self._render_product = None
+
             import omni.usd
 
             stage = omni.usd.get_context().get_stage()
-            if stage and stage.GetPrimAtPath(GRAPH_PATH):
-                stage.RemovePrim(GRAPH_PATH)
-                print("[OmniGraph ROS2 Bridge] Graph removed.")
+            if stage:
+                # Remove OmniGraph
+                if stage.GetPrimAtPath(GRAPH_PATH):
+                    stage.RemovePrim(GRAPH_PATH)
+                # Remove RTX Lidar prim
+                if stage.GetPrimAtPath(RTX_LIDAR_PRIM_PATH):
+                    stage.RemovePrim(RTX_LIDAR_PRIM_PATH)
+                print("[OmniGraph ROS2 Bridge] Graph and RTX Lidar removed.")
         except Exception:
             pass
-
-    # ------------------------------------------------------------------
-    # Private helpers
-    # ------------------------------------------------------------------
-
-    def _update_scan_data(self) -> None:
-        """Set LaserScan depth and intensity data on the OmniGraph node from RayCaster sensor."""
-        ray_hits = self._env.lidar.data.ray_hits_w[0]  # (num_rays, 3)
-        lidar_pos = self._env.lidar.data.pos_w[0]  # (3,)
-        ranges = torch.norm(ray_hits - lidar_pos, dim=-1)  # (num_rays,)
-        ranges_np = ranges.cpu().numpy().astype(np.float32)
-        num_rays = len(ranges_np)
-
-        try:
-            og.Controller.attribute(
-                GRAPH_PATH + "/PublishScan.inputs:linearDepthData"
-            ).set(ranges_np.tolist())
-            # Intensities must match depth data size — use uniform intensity
-            og.Controller.attribute(
-                GRAPH_PATH + "/PublishScan.inputs:intensitiesData"
-            ).set([255] * num_rays)
-        except Exception as e:
-            print(f"[OmniGraph ROS2 Bridge] Warning: Failed to set scan data: {e}")
