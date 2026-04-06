@@ -2,10 +2,9 @@
 
 # RL Navigation — Isaac Lab Extension
 
-Isaac Lab extension for RL navigation. Implements two environments using NVIDIA Isaac Sim and Isaac Lab:
+Isaac Lab extension for RL navigation. Implements the following environment using NVIDIA Isaac Sim and Isaac Lab:
 
-1. **CartPole baseline** (`Template-Rl-Navigation-Direct-v0`) — simple 1-DOF cart-pole balancing task.
-2. **Create 3 Navigation** (`Create3-Navigation-Direct-v0`) — goal-conditioned navigation for an iRobot Create 3 differential-drive robot with lidar, occupancy grid, and a custom CNN feature extractor.
+- **Create 3 Navigation** (`Create3-Navigation-Direct-v0`) — goal-conditioned navigation for an iRobot Create 3 differential-drive robot using Nav2 SLAM occupancy maps and a custom CNN feature extractor.
 
 The project is structured as an isolated extension outside the core Isaac Lab repository. Requires Python 3.10+ and Isaac Sim 4.5+.
 
@@ -20,16 +19,9 @@ python -m pip install -e source/rl_navigation
 # List available environments
 python scripts/list_envs.py
 
-# Test with dummy agents (CartPole)
-python scripts/zero_agent.py --task=Template-Rl-Navigation-Direct-v0
-python scripts/random_agent.py --task=Template-Rl-Navigation-Direct-v0
-
 # Test with dummy agents (Create 3 Navigation)
 python scripts/zero_agent.py --task=Create3-Navigation-Direct-v0
 python scripts/random_agent.py --task=Create3-Navigation-Direct-v0
-
-# Train with Stable-Baselines3 PPO (CartPole)
-python scripts/sb3/train.py --task=Template-Rl-Navigation-Direct-v0 --num_envs=4096 --max_iterations=100
 
 # Train with Stable-Baselines3 PPO (Create 3 Navigation)
 python scripts/sb3/train.py --task=Create3-Navigation-Direct-v0 --num_envs=4096 --max_iterations=100
@@ -93,12 +85,9 @@ rl_navigation/
         │   └── scene_loader.py            # Room/grid file loading
         └── tasks/direct/rl_navigation/
             ├── __init__.py                # Gymnasium env registration
-            ├── rl_navigation_env.py       # CartPole env (unchanged)
-            ├── rl_navigation_env_cfg.py   # CartPole config (unchanged)
             ├── navigation_env.py          # NavigationEnv (Create 3)
             ├── navigation_env_cfg.py      # NavigationEnvCfg
             └── agents/
-                ├── sb3_ppo_cfg.yaml       # CartPole PPO config
                 └── sb3_nav_ppo_cfg.yaml   # Navigation PPO config
 ```
 

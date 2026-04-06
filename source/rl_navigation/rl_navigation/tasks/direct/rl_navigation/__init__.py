@@ -13,16 +13,6 @@ from . import agents
 
 
 gym.register(
-    id="Template-Rl-Navigation-Direct-v0",
-    entry_point=f"{__name__}.rl_navigation_env:RlNavigationEnv",
-    disable_env_checker=True,
-    kwargs={
-        "env_cfg_entry_point": f"{__name__}.rl_navigation_env_cfg:RlNavigationEnvCfg",
-        "sb3_cfg_entry_point": f"{agents.__name__}:sb3_ppo_cfg.yaml",
-    },
-)
-
-gym.register(
     id="Create3-Navigation-Direct-v0",
     entry_point=f"{__name__}.navigation_env:NavigationEnv",
     disable_env_checker=True,
