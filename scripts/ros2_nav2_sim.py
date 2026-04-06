@@ -150,7 +150,7 @@ def main():
                 # Step the environment (triggers OnPlaybackTick -> OmniGraph publishes odom, TF, clock)
                 obs, _, terminated, truncated, _ = env.step(actions)
 
-                # Update sensor data that OmniGraph can't read automatically (LaserScan from RayCaster)
+                # RTX Lidar publishes /scan automatically via OmniGraph — no manual update needed
                 bridge.publish_sensor_data(0.0)
 
                 # Handle episode reset (collision or timeout)

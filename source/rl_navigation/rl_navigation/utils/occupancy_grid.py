@@ -156,6 +156,17 @@ class OccupancyGrid:
 
         return positions
 
+    def is_occupied(self, positions: torch.Tensor) -> torch.Tensor:
+        """Check if world positions are in occupied space (collision).
+
+        Args:
+            positions: (N, 2) world coordinates.
+
+        Returns:
+            (N,) boolean tensor, True if the position is occupied or out of bounds.
+        """
+        return ~self.is_free(positions)
+
     def is_free(self, positions: torch.Tensor) -> torch.Tensor:
         """Check if world positions are in free space.
 

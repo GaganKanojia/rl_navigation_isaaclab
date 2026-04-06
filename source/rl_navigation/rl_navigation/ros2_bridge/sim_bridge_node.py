@@ -10,8 +10,8 @@ OmniGraph instead of direct rclpy usage.  This avoids Python version conflicts
 between Isaac Sim (Python 3.11) and system ROS2 Jazzy (Python 3.12).
 
 The ``/scan`` topic is published by an **RTX Lidar** sensor which ray-traces
-against *all* scene geometry (walls, obstacles, furniture, etc.) rather than the
-Isaac Lab RayCaster which only ray-traces against explicitly specified meshes.
+against *all* scene geometry (walls, obstacles, furniture, etc.).  This is the
+single lidar source — no RayCaster is used anywhere in this codebase.
 """
 
 from __future__ import annotations
@@ -24,15 +24,26 @@ import omni.replicator.core as rep
 import usdrt.Sdf
 from pxr import Gf
 
+from rl_navigation.sensors.camera_cfg import (
+    CAMERA_FRAME_ID,
+    CAMERA_TF_ROTATION_IJKR,
+    CAMERA_TF_TRANSLATION,
+)
+from rl_navigation.sensors.rtx_lidar_cfg import (
+    RTX_LIDAR_CONFIG,
+    RTX_LIDAR_FRAME_ID,
+    RTX_LIDAR_HEIGHT_OFFSET,
+    RTX_LIDAR_PRIM_PATH,
+    RTX_LIDAR_TF_ROTATION,
+    RTX_LIDAR_TF_TRANSLATION,
+)
+
 # Create 3 kinematic parameters
 WHEEL_BASE = 0.233  # metres between wheel centres
 WHEEL_RADIUS = 0.036  # metres
 
 # OmniGraph path for the ROS2 bridge graph
 GRAPH_PATH = "/ROS2Bridge"
-
-# RTX Lidar prim path (created under the robot's base_link)
-RTX_LIDAR_PRIM_PATH = "/World/envs/env_0/Robot/create_3/base_link/rtx_lidar"
 
 
 class SimBridgeNode:
@@ -66,6 +77,7 @@ class SimBridgeNode:
         self._ever_received: bool = False
 
         # Build the RTX Lidar sensor and OmniGraph
+        self._render_product = None
         self._render_product_path: str | None = None
         self._setup_rtx_lidar()
         self._setup_graph()
@@ -79,23 +91,21 @@ class SimBridgeNode:
     def _setup_rtx_lidar(self) -> None:
         """Create an RTX Lidar sensor prim and its render product.
 
-        The RTX Lidar ray-traces against all scene geometry (unlike the Isaac Lab
-        RayCaster which only targets specified mesh prims).  The sensor is created
-        at the robot's base_link with an offset matching the RayCaster config.
+        The RTX Lidar ray-traces against all scene geometry (walls, floor, obstacles).
+        The sensor is created at the robot's base_link at z=0.12 m above the base.
         """
         from isaacsim.core.utils.extensions import enable_extension
 
         enable_extension("isaacsim.sensors.rtx")
 
         # Create RTX Lidar prim using Isaac Sim command
-        # config="Example_Rotary_2D" gives a single-channel 360° rotating lidar
         _, self._lidar_prim = omni.kit.commands.execute(
             "IsaacSensorCreateRtxLidar",
             path=RTX_LIDAR_PRIM_PATH,
             parent=None,
-            config="Example_Rotary_2D",
-            translation=Gf.Vec3d(0.0, 0.0, 0.12),  # same offset as RayCaster lidar
-            orientation=Gf.Quatd(1, 0, 0, 0),       # identity
+            config=RTX_LIDAR_CONFIG,
+            translation=Gf.Vec3d(0.0, 0.0, RTX_LIDAR_HEIGHT_OFFSET),
+            orientation=Gf.Quatd(1, 0, 0, 0),  # identity
         )
 
         # Create a render product so the RTX pipeline processes this sensor
@@ -165,25 +175,24 @@ class SimBridgeNode:
                     ("PublishTF.inputs:topicName", "tf"),
                     ("PublishTF.inputs:parentFrameId", "odom"),
                     ("PublishTF.inputs:childFrameId", "base_link"),
-                    # Static TF: base_link -> laser_frame (z=0.12m)
+                    # Static TF: base_link -> laser_frame
                     ("PublishTFLidar.inputs:topicName", "tf_static"),
                     ("PublishTFLidar.inputs:parentFrameId", "base_link"),
-                    ("PublishTFLidar.inputs:childFrameId", "laser_frame"),
-                    ("PublishTFLidar.inputs:translation", [0.0, 0.0, 0.12]),
-                    ("PublishTFLidar.inputs:rotation", [0.0, 0.0, 0.0, 1.0]),  # IJKR identity
+                    ("PublishTFLidar.inputs:childFrameId", RTX_LIDAR_FRAME_ID),
+                    ("PublishTFLidar.inputs:translation", RTX_LIDAR_TF_TRANSLATION),
+                    ("PublishTFLidar.inputs:rotation", RTX_LIDAR_TF_ROTATION),
                     ("PublishTFLidar.inputs:staticPublisher", True),
                     # Static TF: base_link -> camera_link
                     ("PublishTFCamera.inputs:topicName", "tf_static"),
                     ("PublishTFCamera.inputs:parentFrameId", "base_link"),
-                    ("PublishTFCamera.inputs:childFrameId", "camera_link"),
-                    ("PublishTFCamera.inputs:translation", [0.12, 0.0, 0.10]),
-                    # Isaac camera rotation (w,x,y,z)=(0.5,-0.5,0.5,-0.5) -> IJKR (x,y,z,w)=(-0.5,0.5,-0.5,0.5)
-                    ("PublishTFCamera.inputs:rotation", [-0.5, 0.5, -0.5, 0.5]),
+                    ("PublishTFCamera.inputs:childFrameId", CAMERA_FRAME_ID),
+                    ("PublishTFCamera.inputs:translation", CAMERA_TF_TRANSLATION),
+                    ("PublishTFCamera.inputs:rotation", CAMERA_TF_ROTATION_IJKR),
                     ("PublishTFCamera.inputs:staticPublisher", True),
                     # RTX Lidar Helper — publishes /scan as LaserScan automatically
                     ("RtxLidarHelper.inputs:renderProductPath", self._render_product_path),
                     ("RtxLidarHelper.inputs:topicName", "scan"),
-                    ("RtxLidarHelper.inputs:frameId", "laser_frame"),
+                    ("RtxLidarHelper.inputs:frameId", RTX_LIDAR_FRAME_ID),
                     ("RtxLidarHelper.inputs:type", "laser_scan"),
                     ("RtxLidarHelper.inputs:queueSize", 1),
                     # Clock publisher

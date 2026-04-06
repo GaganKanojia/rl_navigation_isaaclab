@@ -9,14 +9,13 @@ import isaaclab.sim as sim_utils
 from isaaclab.assets import ArticulationCfg
 from isaaclab.envs import DirectRLEnvCfg
 from isaaclab.scene import InteractiveSceneCfg
-from isaaclab.sensors import CameraCfg, RayCasterCfg
+from isaaclab.sensors import CameraCfg
 from isaaclab.sim import SimulationCfg
 from isaaclab.terrains import TerrainImporterCfg
 from isaaclab.utils import configclass
 
 from rl_navigation.robots.create3 import CREATE3_CFG
 from rl_navigation.sensors.camera_cfg import CAMERA_CFG
-from rl_navigation.sensors.lidar_cfg import LIDAR_CFG
 
 
 @configclass
@@ -26,8 +25,11 @@ class NavigationEnvCfg(DirectRLEnvCfg):
     episode_length_s = 60.0
 
     # --- Spaces (dict observation for MultiInputPolicy) ---
+    # Lidar is NOT in the observation space — the RL policy uses the SLAM occupancy
+    # map (published by Nav2 to /map) rather than raw lidar ranges.  The RTX Lidar
+    # sensor publishes /scan which feeds the Nav2 SLAM algorithm; the resulting map
+    # is the primary spatial input to the policy.
     observation_space = {
-        "lidar": 360,
         "occupancy_grid": [1, 50, 50],
         "goal_pose": 3,
         "velocity": 3,
@@ -63,7 +65,8 @@ class NavigationEnvCfg(DirectRLEnvCfg):
     robot_cfg: ArticulationCfg = CREATE3_CFG.replace(prim_path="/World/envs/env_.*/Robot")
 
     # --- Sensors ---
-    lidar_cfg: RayCasterCfg = LIDAR_CFG
+    # Lidar: RTX Lidar is created by SimBridgeNode (Nav2 mode) and publishes /scan.
+    # No RayCaster sensor is needed — the SLAM map from Nav2 is the spatial input.
     camera_cfg: CameraCfg | None = CAMERA_CFG
     enable_camera: bool = True
 
@@ -93,4 +96,3 @@ class NavigationEnvCfg(DirectRLEnvCfg):
     rew_scale_collision: float = -5.0
     rew_scale_time_penalty: float = -0.01
     rew_scale_smoothness: float = -0.1
-    collision_threshold: float = 0.25

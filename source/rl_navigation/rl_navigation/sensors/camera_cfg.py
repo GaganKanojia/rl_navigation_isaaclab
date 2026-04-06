@@ -8,6 +8,16 @@
 import isaaclab.sim as sim_utils
 from isaaclab.sensors import CameraCfg
 
+# ROS2 frame ID used in TF and published image messages
+CAMERA_FRAME_ID: str = "camera_link"
+
+# TF: translation of camera_link relative to base_link [x, y, z] (metres)
+CAMERA_TF_TRANSLATION: list[float] = [0.12, 0.0, 0.10]
+
+# TF: rotation of camera_link relative to base_link in IJKR (x, y, z, w) format.
+# Isaac/ROS convention (w,x,y,z) = (0.5, -0.5, 0.5, -0.5) → IJKR (x,y,z,w) = (-0.5, 0.5, -0.5, 0.5)
+CAMERA_TF_ROTATION_IJKR: list[float] = [-0.5, 0.5, -0.5, 0.5]
+
 CAMERA_CFG = CameraCfg(
     prim_path="/World/envs/env_.*/Robot/create_3/base_link/front_camera",
     offset=CameraCfg.OffsetCfg(
