@@ -2,6 +2,14 @@
 
 ## [Unreleased] — 2026-04-06
 
+### Removed (CartPole cleanup)
+
+- **Deleted `rl_navigation_env.py`**: CartPole (`RlNavigationEnv`) environment implementation removed.
+- **Deleted `rl_navigation_env_cfg.py`**: CartPole config (`RlNavigationEnvCfg`) referencing `CARTPOLE_CFG`, cart/pole DOF names, and reward scales removed.
+- **Deleted `agents/sb3_ppo_cfg.yaml`**: CartPole PPO hyperparameter config removed.
+- **Removed `Template-Rl-Navigation-Direct-v0` gym registration** from `tasks/direct/rl_navigation/__init__.py`.
+- **Updated README.md**: Removed CartPole environment description, dummy agent commands, and training commands. Updated directory tree to reflect current file structure.
+
 ### Changed (RTX Lidar — Single Lidar Source)
 
 - **Replaced RayCaster with RTX Lidar** as the single lidar source throughout the codebase.
