@@ -14,7 +14,7 @@ from collections.abc import Sequence
 import isaaclab.sim as sim_utils
 from isaaclab.assets import Articulation
 from isaaclab.envs import DirectRLEnv
-from isaaclab.sensors import Camera, RayCaster
+from isaaclab.sensors import Camera
 
 from rl_navigation.utils import load_occupancy_grid, load_room_list
 
@@ -24,10 +24,14 @@ from .navigation_env_cfg import NavigationEnvCfg
 class NavigationEnv(DirectRLEnv):
     """Goal-conditioned navigation environment for a differential-drive robot.
 
-    The robot receives lidar scans, a local occupancy grid patch, goal relative
-    pose, and its own velocity as observations. Actions are left/right wheel
-    velocity targets. The reward encourages reaching the goal efficiently while
-    avoiding collisions.
+    The robot receives a local occupancy grid patch (from Nav2 SLAM), goal relative
+    pose, and its own velocity as observations. Actions are left/right wheel velocity
+    targets. The reward encourages reaching the goal efficiently while avoiding
+    collisions (detected via the occupancy grid).
+
+    Lidar data is NOT a direct observation — the RTX Lidar publishes ``/scan`` to
+    ROS2, Nav2 SLAM builds a map from it, and that map is the spatial input to
+    the policy.
     """
 
     cfg: NavigationEnvCfg
@@ -71,10 +75,6 @@ class NavigationEnv(DirectRLEnv):
         self._robot = Articulation(self.cfg.robot_cfg)
         self.scene.articulations["robot"] = self._robot
 
-        # Lidar (attaches to existing prim, no spawn needed)
-        self._lidar = RayCaster(self.cfg.lidar_cfg)
-        self.scene.sensors["lidar"] = self._lidar
-
         # Terrain (room) — must be set up before clone so robot prims exist on stage
         self.cfg.terrain.num_envs = self.scene.cfg.num_envs
         self.cfg.terrain.env_spacing = self.scene.cfg.env_spacing
@@ -106,13 +106,6 @@ class NavigationEnv(DirectRLEnv):
         self._robot.set_joint_velocity_target(wheel_vel_targets, joint_ids=self._wheel_ids)
 
     def _get_observations(self) -> dict:
-        # --- Lidar ranges ---
-        ray_hits = self._lidar.data.ray_hits_w  # (N, num_rays, 3)
-        lidar_pos = self._lidar.data.pos_w  # (N, 3)
-        ranges = torch.norm(ray_hits - lidar_pos.unsqueeze(1), dim=-1)  # (N, num_rays)
-        ranges = ranges.clamp(0.0, self.cfg.lidar_cfg.max_distance)
-        lidar_obs = ranges / self.cfg.lidar_cfg.max_distance  # Normalize to [0, 1]
-
         # --- Robot pose ---
         robot_pos_w = self._robot.data.root_pos_w  # (N, 3)
         robot_quat = self._robot.data.root_quat_w  # (N, 4) as (w, x, y, z)
@@ -155,7 +148,6 @@ class NavigationEnv(DirectRLEnv):
 
         observations = {
             "policy": {
-                "lidar": lidar_obs,
                 "occupancy_grid": occ_patch,
                 "goal_pose": goal_obs,
                 "velocity": velocity,
@@ -168,17 +160,13 @@ class NavigationEnv(DirectRLEnv):
         robot_local_xy = self._robot.data.root_pos_w[:, :2] - self.scene.env_origins[:, :2]
         goal_dist = torch.norm(self._goal_pos - robot_local_xy, dim=-1)
 
-        # Lidar min range for collision detection
-        ray_hits = self._lidar.data.ray_hits_w
-        lidar_pos = self._lidar.data.pos_w
-        ranges = torch.norm(ray_hits - lidar_pos.unsqueeze(1), dim=-1)
-        min_range = ranges.min(dim=-1).values
+        # Collision detection via occupancy grid (robot is in collision if its cell is occupied)
+        in_collision = self._occ_grid.is_occupied(robot_local_xy)  # (N,) bool
 
         # Compute individual reward components
         rew_goal = self.cfg.rew_scale_goal_reached * (goal_dist < self.cfg.goal_radius).float()
         rew_progress = self.cfg.rew_scale_distance_progress * (self._prev_goal_dist - goal_dist)
-        collision_proximity = (self.cfg.collision_threshold - min_range).clamp(min=0.0)
-        rew_collision = self.cfg.rew_scale_collision * collision_proximity
+        rew_collision = self.cfg.rew_scale_collision * in_collision.float()
         rew_time = self.cfg.rew_scale_time_penalty * torch.ones_like(goal_dist)
         rew_smooth = self.cfg.rew_scale_smoothness * torch.sum(
             torch.square(self._actions - self._previous_actions), dim=-1
@@ -209,11 +197,8 @@ class NavigationEnv(DirectRLEnv):
         # Termination conditions
         goal_reached = goal_dist < self.cfg.goal_radius
 
-        # Hard collision detection
-        ray_hits = self._lidar.data.ray_hits_w
-        lidar_pos = self._lidar.data.pos_w
-        ranges = torch.norm(ray_hits - lidar_pos.unsqueeze(1), dim=-1)
-        collision = ranges.min(dim=-1).values < 0.1
+        # Collision detection via occupancy grid
+        collision = self._occ_grid.is_occupied(robot_local_xy)
 
         terminated = goal_reached | collision
         time_out = self.episode_length_buf >= self.max_episode_length - 1
@@ -222,7 +207,7 @@ class NavigationEnv(DirectRLEnv):
 
     def _reset_idx(self, env_ids: Sequence[int] | None):
         if env_ids is None:
-            env_ids = self._robot._ALL_INDICES
+            env_ids = torch.arange(self.num_envs, device=self.device)
         super()._reset_idx(env_ids)
 
         num_resets = len(env_ids)
@@ -324,11 +309,6 @@ class NavigationEnv(DirectRLEnv):
     def camera(self) -> Camera | None:
         """Front-facing RGB-D camera sensor, or ``None`` if disabled."""
         return self._camera
-
-    @property
-    def lidar(self) -> RayCaster:
-        """Planar lidar ray-caster sensor."""
-        return self._lidar
 
     @property
     def occ_grid(self):
