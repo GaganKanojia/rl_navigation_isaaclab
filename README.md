@@ -231,7 +231,7 @@ python scripts/ros2_nav2_sim.py --mode exploration --disable_fabric
 
 # Terminal 2 — SLAM Toolbox (builds map from lidar)
 ros2 launch slam_toolbox online_async_launch.py \
-  params_file:=$(pwd)/config/nav2/slam_toolbox_params.yaml
+  slam_params_file:=$(pwd)/config/nav2/slam_toolbox_params.yaml use_sim_time:=false
 
 # Terminal 3 — Nav2 stack (path planning + obstacle avoidance)
 ros2 launch nav2_bringup navigation_launch.py \
@@ -266,7 +266,7 @@ python scripts/ros2_nav2_sim.py --mode navigation --disable_fabric
 
 # Terminal 2 — SLAM Toolbox
 ros2 launch slam_toolbox online_async_launch.py \
-  params_file:=$(pwd)/config/nav2/slam_toolbox_params.yaml
+  slam_params_file:=$(pwd)/config/nav2/slam_toolbox_params.yaml use_sim_time:=false
 
 # Terminal 3 — Nav2 stack
 ros2 launch nav2_bringup navigation_launch.py \

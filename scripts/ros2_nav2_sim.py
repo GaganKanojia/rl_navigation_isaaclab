@@ -65,7 +65,7 @@ NAV2_INSTRUCTIONS = {
 
   Terminal 2 — SLAM Toolbox:
     ros2 launch slam_toolbox online_async_launch.py \\
-      params_file:=$(pwd)/config/nav2/slam_toolbox_params.yaml
+      slam_params_file:=$(pwd)/config/nav2/slam_toolbox_params.yaml use_sim_time:=false
 
   Terminal 3 — Nav2 Stack:
     ros2 launch nav2_bringup navigation_launch.py \\
@@ -87,7 +87,7 @@ NAV2_INSTRUCTIONS = {
 
   Terminal 2 — SLAM Toolbox:
     ros2 launch slam_toolbox online_async_launch.py \\
-      params_file:=$(pwd)/config/nav2/slam_toolbox_params.yaml
+      slam_params_file:=$(pwd)/config/nav2/slam_toolbox_params.yaml use_sim_time:=false
 
   Terminal 3 — Nav2 Stack:
     ros2 launch nav2_bringup navigation_launch.py \\
