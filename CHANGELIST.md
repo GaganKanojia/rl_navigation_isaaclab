@@ -1,5 +1,20 @@
 # Changelist
 
+## [Unreleased] — 2026-04-07
+
+### Fixed (Nav2 config audit)
+
+- **`nav2_params.yaml` — `collision_monitor` section added (CRITICAL)**: `navigation_launch.py` routes all velocity commands through `collision_monitor` before they reach `/cmd_vel` (`controller → /cmd_vel_nav → velocity_smoother → /cmd_vel_smoothed → collision_monitor → /cmd_vel → robot`). Without this section the node fails `on_configure` — `polygons` and `observation_sources` are declared in source without defaults, so their absence throws an exception and brings down the entire lifecycle stack. Added with `polygons: []` and `observation_sources: []` (transparent pass-through; costmap-based avoidance is sufficient).
+- **`nav2_params.yaml` — missing lifecycle node sections added**: `navigation_launch.py` manages 10 lifecycle nodes; the params file only covered 6. Added `smoother_server`, `waypoint_follower`, `route_server`, and `docking_server` so the lifecycle manager can activate all nodes cleanly.
+- **`nav2_params.yaml` — missing optional parameters added**: Added `behavior_server` frame/kinematic params (`local_frame`, `global_frame`, `robot_base_frame`, `transform_tolerance`, `simulate_ahead_time`, `max_rotational_vel`, `min_rotational_vel`, `rotational_acc_lim`) required for spin/backup recovery behaviors to look up TF correctly. Added `velocity_timeout` to `velocity_smoother`, `failure_tolerance` and `costmap_update_timeout` to `controller_server`, `costmap_update_timeout` to `planner_server`, and `wait_for_service_timeout`/`action_server_result_timeout` to `bt_navigator`.
+- **`sensors/__init__.py` — broken import fixed**: `from .lidar_cfg import LIDAR_CFG` referenced a deleted file (`lidar_cfg.py` was renamed to `rtx_lidar_cfg.py`). Changed to `from .rtx_lidar_cfg import RTX_LIDAR_CONFIG`. The stale `.pyc` masked the issue locally but any fresh import of the package would raise `ModuleNotFoundError`.
+- **`nav_feature_extractor.py` — dead lidar branch removed (CRITICAL)**: `forward()` accessed `observations["lidar"]` but `NavigationEnv._get_observations()` only returns `occupancy_grid`, `goal_pose`, and `velocity` (lidar was explicitly removed from the RL observation space in the RTX Lidar change). This caused a `KeyError` on the first training step. Removed `lidar_cnn` branch; updated architecture docstring and default `features_dim` from 134 → 70 (64 grid CNN + 3 goal + 3 velocity).
+- **`agents/sb3_nav_ppo_cfg.yaml` — `features_dim` corrected**: Updated from 134 to 70 to match the corrected feature extractor output (64 + 3 + 3).
+- **`slam_toolbox_params.yaml` description in README**: Table said "12m range"; actual `max_laser_range` in the file is 15.0 m. Corrected to "15m range".
+- **`ros2_nav2_sim.py` and `README.md` — frontier explorer launch command fixed**: `ros2 launch explore_lite explore.launch.py` hardcodes the package's own `config/params.yaml` and provides no `params_file` argument, silently ignoring `exploration_params.yaml`. Corrected to `ros2 run explore_lite explore --ros-args --params-file $(pwd)/config/nav2/exploration_params.yaml`.
+- **`README.md` — m-explore repository name corrected**: Install instructions referenced `robo-friends/m-explore-next`; the package in the workspace is `m-explore-ros2`. Updated git clone URL accordingly.
+- **`README.md` — colcon build flag corrected**: `colcon build --packages-select explore_lite` does not follow dependencies; `explore_lite` requires `explore_lite_msgs` (declared in `package.xml`), which is a sibling package in the same repo. Changed to `--packages-up-to explore_lite` so `explore_lite_msgs` is built first.
+
 ## [Unreleased] — 2026-04-06
 
 ### Removed (CartPole cleanup)

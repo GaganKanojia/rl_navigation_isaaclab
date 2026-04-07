@@ -5,8 +5,8 @@
 
 """Custom SB3 feature extractor for the navigation environment.
 
-Processes dict observations with parallel CNN branches for the occupancy
-grid and lidar scan, concatenated with goal pose and velocity vectors.
+Processes dict observations with a CNN branch for the occupancy grid,
+concatenated with goal pose and velocity vectors.
 """
 
 from __future__ import annotations
@@ -23,18 +23,17 @@ class NavigationFeaturesExtractor(BaseFeaturesExtractor):
     Architecture::
 
         occupancy_grid (1, 50, 50) -> 2D CNN -> 64-dim
-        lidar (360,)              -> 1D CNN -> 64-dim
-        goal_pose (3,)            -> passthrough
-        velocity (3,)             -> passthrough
+        goal_pose (3,)             -> passthrough
+        velocity (3,)              -> passthrough
         ───────────────────────────────────────────
-        concat -> 134-dim output
+        concat -> 70-dim output
 
     Args:
         observation_space: Dict observation space from the environment.
-        features_dim: Output feature dimension (default: 134).
+        features_dim: Output feature dimension (default: 70).
     """
 
-    def __init__(self, observation_space: gym.spaces.Dict, features_dim: int = 134):
+    def __init__(self, observation_space: gym.spaces.Dict, features_dim: int = 70):
         super().__init__(observation_space, features_dim)
 
         # 2D CNN for occupancy grid: (N, 1, 50, 50) -> (N, 64)
@@ -50,26 +49,11 @@ class NavigationFeaturesExtractor(BaseFeaturesExtractor):
             nn.ReLU(),
         )
 
-        # 1D CNN for lidar: (N, 360) -> (N, 64)
-        self.lidar_cnn = nn.Sequential(
-            nn.Unflatten(1, (1, 360)),
-            nn.Conv1d(1, 16, kernel_size=7, stride=3, padding=3),
-            nn.ReLU(),
-            nn.Conv1d(16, 32, kernel_size=5, stride=3, padding=2),
-            nn.ReLU(),
-            nn.Conv1d(32, 32, kernel_size=3, stride=2, padding=1),
-            nn.ReLU(),
-            nn.Flatten(),
-            nn.Linear(32 * 20, 64),
-            nn.ReLU(),
-        )
-
         # goal_pose(3) + velocity(3) pass through directly
-        # Total output: 64 + 64 + 3 + 3 = 134
+        # Total output: 64 + 3 + 3 = 70
 
     def forward(self, observations: dict[str, torch.Tensor]) -> torch.Tensor:
         grid_features = self.grid_cnn(observations["occupancy_grid"])
-        lidar_features = self.lidar_cnn(observations["lidar"])
         goal = observations["goal_pose"]
         vel = observations["velocity"]
-        return torch.cat([grid_features, lidar_features, goal, vel], dim=-1)
+        return torch.cat([grid_features, goal, vel], dim=-1)

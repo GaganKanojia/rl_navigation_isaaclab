@@ -207,9 +207,9 @@ sudo apt install ros-jazzy-tf2-ros
 
 # Frontier explorer (build from source if not available as binary)
 cd ~/ros2_ws/src
-git clone https://github.com/robo-friends/m-explore-next.git
+git clone https://github.com/robo-friends/m-explore-ros2.git
 cd ~/ros2_ws
-colcon build --packages-select explore_lite
+colcon build --packages-up-to explore_lite
 source install/setup.bash
 ```
 
@@ -238,7 +238,8 @@ ros2 launch nav2_bringup navigation_launch.py \
   params_file:=$(pwd)/config/nav2/nav2_params.yaml use_sim_time:=false
 
 # Terminal 4 — Frontier explorer (selects exploration goals)
-ros2 launch explore_lite explore.launch.py
+ros2 run explore_lite explore --ros-args \
+  --params-file $(pwd)/config/nav2/exploration_params.yaml
 
 # Terminal 5 (optional) — RViz2 visualization
 ros2 launch nav2_bringup rviz_launch.py
@@ -291,7 +292,7 @@ All Nav2 configuration files are in `config/nav2/`:
 | File | Description |
 |---|---|
 | `nav2_params.yaml` | DWB controller, NavFn planner, costmaps, recovery behaviors — tuned for Create 3 kinematics |
-| `slam_toolbox_params.yaml` | Online async SLAM with 360° lidar, 12m range, loop closure enabled |
+| `slam_toolbox_params.yaml` | Online async SLAM with 360° lidar, 15m range, loop closure enabled |
 | `exploration_params.yaml` | Frontier explorer (m-explore-next) parameters |
 
 Key parameters matching Create 3 kinematics:

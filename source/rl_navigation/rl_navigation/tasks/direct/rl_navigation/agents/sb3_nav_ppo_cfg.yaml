@@ -19,7 +19,7 @@ clip_range: !!float 0.2
 policy_kwargs:
   features_extractor_class: "rl_navigation.feature_extractor.NavigationFeaturesExtractor"
   features_extractor_kwargs:
-    features_dim: 134
+    features_dim: 70
   net_arch:
     pi: [128, 64]
     vf: [128, 64]
