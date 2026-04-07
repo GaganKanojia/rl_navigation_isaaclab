@@ -72,7 +72,8 @@ NAV2_INSTRUCTIONS = {
       params_file:=$(pwd)/config/nav2/nav2_params.yaml use_sim_time:=false
 
   Terminal 4 — Frontier Explorer:
-    ros2 launch explore_lite explore.launch.py
+    ros2 run explore_lite explore --ros-args \\
+      --params-file $(pwd)/config/nav2/exploration_params.yaml
 
   Terminal 5 (optional) — RViz2 Visualization:
     ros2 launch nav2_bringup rviz_launch.py
