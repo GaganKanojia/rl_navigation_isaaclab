@@ -6,7 +6,7 @@
 # SLAM Toolbox parameters for iRobot Create 3 with 360-degree planar lidar.
 # Usage:
 #   ros2 launch slam_toolbox online_async_launch.py \
-#     params_file:=config/nav2/slam_toolbox_params.yaml
+#     slam_params_file:=$(pwd)/config/nav2/slam_toolbox_params.yaml
 
 slam_toolbox:
   ros__parameters:
