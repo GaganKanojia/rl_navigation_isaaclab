@@ -209,8 +209,9 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     if args_cli.checkpoint is not None:
         agent = agent.load(args_cli.checkpoint, env, print_system_info=True)
 
-    # callbacks for agent
-    checkpoint_callback = CheckpointCallback(save_freq=1000, save_path=log_dir, name_prefix="model", verbose=2)
+    # Save once per rollout iteration (n_steps × num_envs env steps = one PPO update cycle)
+    steps_per_iteration = agent_cfg.get("n_steps", 32) * env_cfg.scene.num_envs
+    checkpoint_callback = CheckpointCallback(save_freq=steps_per_iteration, save_path=log_dir, name_prefix="model", verbose=2)
     callbacks = [checkpoint_callback, LogEveryNTimesteps(n_steps=args_cli.log_interval)]
 
     # train the agent

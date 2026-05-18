@@ -9,6 +9,7 @@
 
 explore_node:
   ros__parameters:
+    use_sim_time: true
     robot_base_frame: base_link
     costmap_topic: /global_costmap/costmap
     visualize: true

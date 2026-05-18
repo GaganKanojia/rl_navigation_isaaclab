@@ -68,14 +68,14 @@ class NavigationEnvCfg(DirectRLEnvCfg):
     # Lidar: RTX Lidar is created by SimBridgeNode (Nav2 mode) and publishes /scan.
     # No RayCaster sensor is needed — the SLAM map from Nav2 is the spatial input.
     camera_cfg: CameraCfg | None = CAMERA_CFG
-    enable_camera: bool = True
+    enable_camera: bool = False  # set True in Nav2/teleop scripts; not needed for RL training
 
     # --- Wheel joint names (must match USD) ---
     left_wheel_joint: str = "left_wheel_joint"
     right_wheel_joint: str = "right_wheel_joint"
 
     # --- Action / dynamics ---
-    max_wheel_vel: float = 6.28  # rad/s (~0.5 m/s for 80mm radius wheel)
+    max_wheel_vel: float = 6.28  # rad/s (≈0.226 m/s for 36mm radius wheel)
 
     # --- Occupancy grid ---
     rooms_txt_path: str = "config/rooms.txt"

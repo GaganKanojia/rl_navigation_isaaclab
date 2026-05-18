@@ -217,8 +217,12 @@ class NavigationEnv(DirectRLEnv):
             start_positions = self._occ_grid.sample_free_positions(num_resets, self.device)
             goal_positions = self._sample_goals(start_positions)
         else:
-            # Nav2 mode: fixed spawn at origin, dummy goal (Nav2 manages goals)
-            start_positions = torch.zeros(num_resets, 2, device=self.device)
+            # Nav2 mode: spawn 1.0 m from the room corner so all lidar rays have
+            # ≥1.0 m clearance to each wall — SLAM needs valid scan data in every
+            # direction to include the robot's starting cell in the karto grid.
+            # Spawning at (0,0) places the robot at the room corner; physics drift
+            # of ~3 cm pushes it outside the initial SLAM map (origin x=0.00).
+            start_positions = torch.full((num_resets, 2), 1.0, device=self.device)
             goal_positions = torch.zeros(num_resets, 2, device=self.device)
 
         self._goal_pos[env_ids] = goal_positions
@@ -290,14 +294,13 @@ class NavigationEnv(DirectRLEnv):
             dists = torch.norm(candidates - starts_expanded, dim=-1)
             valid = (dists >= self.cfg.min_goal_distance) & (dists <= self.cfg.max_goal_distance)
 
-            # Pick first valid candidate per environment
+            # Pick first valid candidate per environment (vectorized)
             has_valid = valid.any(dim=1)
             first_valid_idx = valid.float().argmax(dim=1)
 
             remaining_indices = torch.where(remaining)[0]
-            for i in range(n_remaining):
-                if has_valid[i]:
-                    goals[remaining_indices[i]] = candidates[i, first_valid_idx[i]]
+            selected = candidates[torch.arange(n_remaining, device=self.device), first_valid_idx]
+            goals[remaining_indices[has_valid]] = selected[has_valid]
 
             remaining[remaining.clone()] = ~has_valid
 

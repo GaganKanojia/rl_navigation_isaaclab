@@ -114,6 +114,16 @@ class SimBridgeNode:
         )
         self._render_product_path = self._render_product.path
 
+        # RTX temporal interpolation emits two warnings per step in step-by-step mode
+        # (no adjacent time samples exist). Functionally benign — timestamps use current
+        # sim time — but the flood obscures real errors, so suppress to ERROR level.
+        import omni.log as omni_log
+        omni_log.get_log().set_channel_level(
+            "isaacsim.core.simulation_manager.plugin",
+            omni_log.Level.ERROR,
+            omni_log.SettingBehavior.OVERRIDE,
+        )
+
         print(f"[OmniGraph ROS2 Bridge] RTX Lidar created at {RTX_LIDAR_PRIM_PATH}")
         print(f"[OmniGraph ROS2 Bridge] Render product at {self._render_product_path}")
 

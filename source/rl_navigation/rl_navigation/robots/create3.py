@@ -46,10 +46,17 @@ CREATE3_CFG = ArticulationCfg(
     actuators={
         "wheels": ImplicitActuatorCfg(
             joint_names_expr=["left_wheel_joint", "right_wheel_joint"],
-            effort_limit=1.0,
-            velocity_limit=10.0,
+            effort_limit_sim=1.0,
+            velocity_limit_sim=10.0,
             stiffness=0.0,
             damping=5.0,
+        ),
+        "passive": ImplicitActuatorCfg(
+            joint_names_expr=[".*"],  # catch-all for remaining joints (e.g. casters)
+            effort_limit_sim=0.0,
+            velocity_limit_sim=100.0,
+            stiffness=0.0,
+            damping=0.0,
         ),
     },
 )
