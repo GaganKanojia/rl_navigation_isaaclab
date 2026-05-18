@@ -131,10 +131,17 @@ def _process_mesh(mesh: "trimesh.Trimesh", args: argparse.Namespace) -> None:
     origins = np.array(origins)
     directions = np.tile([0.0, 0.0, -1.0], (len(origins), 1))
 
-    # Ray-cast to find occupied cells
+    # Ray-cast to find occupied cells.
+    # Filter out floor intersections: rays from z=height downward also hit the floor
+    # mesh at z≈0. Only keep hits that are above a small threshold so that wall/obstacle
+    # geometry is detected while the floor plane is ignored.
     locations, index_ray, _ = mesh.ray.intersects_location(ray_origins=origins, ray_directions=directions)
 
     if len(index_ray) > 0:
+        floor_z_threshold = args.height * 0.5  # hits below half the slice height are floor
+        above_floor = locations[:, 2] > floor_z_threshold
+        index_ray = index_ray[above_floor]
+
         occupied_cells = set(index_ray.tolist())
         for cell_idx in occupied_cells:
             row = cell_idx // width

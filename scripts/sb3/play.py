@@ -178,9 +178,9 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     elif "normalize_input" in agent_cfg:
         env = VecNormalize(
             env,
-            training=True,
-            norm_obs="normalize_input" in agent_cfg and agent_cfg.pop("normalize_input"),
-            clip_obs="clip_obs" in agent_cfg and agent_cfg.pop("clip_obs"),
+            training=False,
+            norm_obs=agent_cfg.pop("normalize_input", True),
+            clip_obs=float(agent_cfg.pop("clip_obs", 10.0)),
         )
 
     # create agent from stable baselines

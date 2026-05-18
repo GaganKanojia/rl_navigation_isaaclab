@@ -4,13 +4,17 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 # ROS2 bridge configuration for Create 3 navigation simulation.
-# These values are defaults used by SimBridgeNode.
+#
+# NOTE: This file is reference documentation only — SimBridgeNode does NOT load it
+# at runtime. The operative constants are hardcoded in sim_bridge_node.py:
+#   WHEEL_BASE = 0.233, WHEEL_RADIUS = 0.036
+# To change kinematic parameters, edit those constants directly.
 
 # iRobot Create 3 kinematic parameters
 robot:
   wheel_base: 0.233      # metres between wheel centres
   wheel_radius: 0.036    # metres
-  max_linear_vel: 0.5    # m/s
+  max_linear_vel: 0.226  # m/s  (= max_wheel_vel 6.28 rad/s × wheel_radius 0.036 m)
   max_angular_vel: 1.9   # rad/s
 
 # Topic names

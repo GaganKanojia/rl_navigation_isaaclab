@@ -231,15 +231,16 @@ python scripts/ros2_nav2_sim.py --mode exploration --disable_fabric
 
 # Terminal 2 — SLAM Toolbox (builds map from lidar)
 ros2 launch slam_toolbox online_async_launch.py \
-  slam_params_file:=$(pwd)/config/nav2/slam_toolbox_params.yaml
+  slam_params_file:=$PWD/config/nav2/slam_toolbox_params.yaml
 
 # Terminal 3 — Nav2 stack (path planning + obstacle avoidance)
-ros2 launch nav2_bringup navigation_launch.py \
-  params_file:=$(pwd)/config/nav2/nav2_params.yaml use_sim_time:=true
+ros2 launch $PWD/config/nav2/navigation_launch.py \
+  params_file:=$PWD/config/nav2/nav2_params.yaml use_sim_time:=true
 
 # Terminal 4 — Frontier explorer (selects exploration goals)
 ros2 run explore_lite explore --ros-args \
-  --params-file $(pwd)/config/nav2/exploration_params.yaml
+  --params-file $PWD/config/nav2/exploration_params.yaml \
+  -p use_sim_time:=true
 
 # Terminal 5 (optional) — RViz2 visualization
 ros2 launch nav2_bringup rviz_launch.py
@@ -266,11 +267,11 @@ python scripts/ros2_nav2_sim.py --mode navigation --disable_fabric
 
 # Terminal 2 — SLAM Toolbox
 ros2 launch slam_toolbox online_async_launch.py \
-  slam_params_file:=$(pwd)/config/nav2/slam_toolbox_params.yaml
+  slam_params_file:=$PWD/config/nav2/slam_toolbox_params.yaml
 
 # Terminal 3 — Nav2 stack
-ros2 launch nav2_bringup navigation_launch.py \
-  params_file:=$(pwd)/config/nav2/nav2_params.yaml use_sim_time:=true
+ros2 launch $PWD/config/nav2/navigation_launch.py \
+  params_file:=$PWD/config/nav2/nav2_params.yaml use_sim_time:=true
 
 # Terminal 4 (optional) — RViz2 visualization
 ros2 launch nav2_bringup rviz_launch.py
