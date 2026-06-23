@@ -282,7 +282,7 @@ ros2 launch slam_toolbox online_async_launch.py \
   slam_params_file:=$PWD/config/nav2/slam_toolbox_params.yaml \
   use_sim_time:=true
 
-# Terminal 3 — Nav2 stack
+# Terminal 3 — Nav2 stack (for jazzy 1.3.10)
 ros2 launch $PWD/config/nav2/navigation_launch.py \
   params_file:=$PWD/config/nav2/nav2_params.yaml use_sim_time:=true
 

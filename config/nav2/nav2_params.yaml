@@ -266,32 +266,3 @@ waypoint_follower:
       plugin: "nav2_waypoint_follower::WaitAtWaypoint"
       enabled: true
       waypoint_pause_duration: 200
-
-route_server:
-  ros__parameters:
-    radius_to_achieve_node: 2.0
-    boundary_radius_to_achieve_node: 1.0
-    smooth_corners: true
-    operations: []
-    edge_cost_functions: []
-
-docking_server:
-  ros__parameters:
-    controller_frequency: 50.0
-    initial_perception_timeout: 5.0
-    wait_charge_timeout: 5.0
-    dock_approach_timeout: 30.0
-    undock_linear_tolerance: 0.05
-    undock_angular_tolerance: 0.1
-    max_retries: 3
-    base_frame: "base_link"
-    fixed_frame: "odom"
-    dock_backwards: false
-    dock_prestaging_tolerance: 0.5
-    dock_plugins: []
-    docks: []
-    controller:
-      k_phi: 3.0
-      k_delta: 2.0
-      v_linear_min: 0.15
-      v_linear_max: 0.15
