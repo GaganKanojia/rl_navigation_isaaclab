@@ -19,7 +19,6 @@ from __future__ import annotations
 import torch
 
 import omni.graph.core as og
-import omni.kit.commands
 import omni.replicator.core as rep
 import usdrt.Sdf
 from pxr import Gf
@@ -30,8 +29,9 @@ from rl_navigation.sensors.camera_cfg import (
     CAMERA_TF_TRANSLATION,
 )
 from rl_navigation.sensors.rtx_lidar_cfg import (
-    RTX_LIDAR_CONFIG,
-    RTX_LIDAR_CONFIG_DIR,
+    RTX_LIDAR_CORE_PROFILE,
+    RTX_LIDAR_EMITTER_STATE,
+    RTX_LIDAR_EMITTER_STATE_NAME,
     RTX_LIDAR_FRAME_ID,
     RTX_LIDAR_HEIGHT_OFFSET,
     RTX_LIDAR_PRIM_PATH,
@@ -90,37 +90,56 @@ class SimBridgeNode:
     # ------------------------------------------------------------------
 
     def _setup_rtx_lidar(self) -> None:
-        """Create an RTX Lidar sensor prim and its render product.
+        """Create an RTX Lidar (``OmniLidar``) sensor prim and its render product.
 
         The RTX Lidar ray-traces against all scene geometry (walls, floor, obstacles).
         The sensor is created at the robot's base_link at z=0.12 m above the base.
+
+        Isaac Sim 5.0 dropped JSON lidar profiles for ``OmniLidar`` prims, so the
+        Create 3 planar profile is authored directly as ``omni:sensor:Core:*`` USD
+        attributes (see ``rtx_lidar_cfg``).  We create the prim via the Replicator
+        API rather than the ``IsaacSensorCreateRtxLidar`` command: in 5.0 that command
+        only resolves named ``config`` values against built-in USD assets, and its
+        replicator fallback mangles deeply-nested prim paths (it passes the slash-
+        containing path as the prim *name*), so the sensor would not land at
+        ``RTX_LIDAR_PRIM_PATH``.  Creating with ``(name, parent)`` places it exactly.
         """
+        import omni.usd
         from isaacsim.core.utils.extensions import enable_extension
+        from isaacsim.core.utils.xforms import reset_and_set_xform_ops
 
         enable_extension("isaacsim.sensors.rtx")
 
-        # Register this package's lidar_configs folder so the custom
-        # "Create3_Planar_Lidar" profile is resolvable by name.  Isaac Sim looks up
-        # configs in the folders listed in app.sensors.nv.lidar.profileBaseFolder, so
-        # we append ours rather than overwrite the built-in search paths.
-        import carb
+        stage = omni.usd.get_context().get_stage()
+        parent_path, _, sensor_name = RTX_LIDAR_PRIM_PATH.rpartition("/")
 
-        settings = carb.settings.get_settings()
-        profile_setting = "/app/sensors/nv/lidar/profileBaseFolder"
-        profile_folders = list(settings.get(profile_setting) or [])
-        if RTX_LIDAR_CONFIG_DIR not in profile_folders:
-            profile_folders.append(RTX_LIDAR_CONFIG_DIR)
-            settings.set_string_array(profile_setting, profile_folders)
+        # Create the OmniLidar prim.  This applies OmniSensorGenericLidarCoreAPI (and
+        # its emitter-state sub-schema), so the omni:sensor:Core:* attributes below
+        # already exist on the prim and just need their values set.
+        rep.functional.create.omni_lidar(name=sensor_name, parent=parent_path)
 
-        # Create RTX Lidar prim using Isaac Sim command
-        _, self._lidar_prim = omni.kit.commands.execute(
-            "IsaacSensorCreateRtxLidar",
-            path=RTX_LIDAR_PRIM_PATH,
-            parent=None,
-            config=RTX_LIDAR_CONFIG,
-            translation=Gf.Vec3d(0.0, 0.0, RTX_LIDAR_HEIGHT_OFFSET),
-            orientation=Gf.Quatd(1, 0, 0, 0),  # identity
+        self._lidar_prim = stage.GetPrimAtPath(RTX_LIDAR_PRIM_PATH)
+        if not self._lidar_prim.IsValid():
+            raise RuntimeError(f"Failed to create RTX Lidar at {RTX_LIDAR_PRIM_PATH}")
+
+        # Local pose relative to base_link: lifted by RTX_LIDAR_HEIGHT_OFFSET, identity orientation.
+        reset_and_set_xform_ops(
+            self._lidar_prim,
+            Gf.Vec3d(0.0, 0.0, RTX_LIDAR_HEIGHT_OFFSET),
+            Gf.Quatd(1, 0, 0, 0),  # identity
         )
+
+        # Author the Create 3 planar profile.
+        for attr_name, value in RTX_LIDAR_CORE_PROFILE.items():
+            self._lidar_prim.GetAttribute(attr_name).Set(value)
+
+        emitter_prefix = f"omni:sensor:Core:emitterState:{RTX_LIDAR_EMITTER_STATE_NAME}:"
+        for field, value in RTX_LIDAR_EMITTER_STATE.items():
+            self._lidar_prim.GetAttribute(emitter_prefix + field).Set(value)
+
+        # Keep invalid points so downstream LaserScan conversion sees a fixed-size
+        # ring (matches IsaacSensorCreateRtxLidar.do()).
+        self._lidar_prim.GetAttribute("omni:sensor:Core:skipDroppingInvalidPoints").Set(True)
 
         # Create a render product so the RTX pipeline processes this sensor
         self._render_product = rep.create.render_product(

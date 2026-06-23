@@ -26,9 +26,6 @@ INSTALL_REQUIRES = [
 setup(
     name="rl_navigation",
     packages=find_packages(),
-    # Ship non-Python assets (e.g. the custom RTX Lidar profile JSON) in built
-    # wheels/sdists too; editable installs read them straight from source.
-    package_data={"rl_navigation": ["sensors/lidar_configs/*.json"]},
     author=EXTENSION_TOML_DATA["package"]["author"],
     maintainer=EXTENSION_TOML_DATA["package"]["maintainer"],
     url=EXTENSION_TOML_DATA["package"]["repository"],

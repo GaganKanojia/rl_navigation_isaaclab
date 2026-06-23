@@ -4,4 +4,4 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 from .camera_cfg import CAMERA_CFG
-from .rtx_lidar_cfg import RTX_LIDAR_CONFIG
+from .rtx_lidar_cfg import RTX_LIDAR_CORE_PROFILE, RTX_LIDAR_EMITTER_STATE

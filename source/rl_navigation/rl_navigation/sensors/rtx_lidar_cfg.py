@@ -11,27 +11,73 @@ in this codebase — no Isaac Lab RayCaster is used.
 
 The sensor prim is created at runtime by ``SimBridgeNode._setup_rtx_lidar()``
 using the constants defined here.
-"""
 
-import os
+**Isaac Sim 5.0 profile model.**  Isaac Sim 5.0 replaced the old JSON lidar
+profiles (resolved by name against ``app.sensors.nv.lidar.profileBaseFolder``)
+with the ``OmniLidar`` prim, whose profile is authored directly as
+``omni:sensor:Core:*`` USD attributes via the ``OmniSensorGenericLidarCoreAPI``
+schema.  The Create 3 planar profile below is therefore expressed as attribute
+values rather than a JSON file.
+"""
 
 # Prim path of the RTX Lidar sensor (absolute, for env_0 in Nav2 / single-env mode)
 RTX_LIDAR_PRIM_PATH: str = "/World/envs/env_0/Robot/create_3/base_link/rtx_lidar"
 
-# Custom RTX Lidar profile shipped with this package.
+# Core lidar profile, authored as OmniSensorGenericLidarCoreAPI USD attributes.
 #
-# The stock Isaac Sim preset "Example_Rotary_2D" has nearRangeM=1.0 (a 1 m blind
-# ring — unusable for a 0.17 m-radius indoor robot) and a beam tilted 2 deg down
-# into the floor.  "Create3_Planar_Lidar" (see lidar_configs/) fixes both:
-# nearRangeM=0.05, horizontal beam, farRangeM=20 m (above the SLAM max_laser_range
-# of 15 m and costmap raytrace_max_range of 12 m, so those YAML values stay the
-# effective limit).
-#
-# Isaac Sim resolves a config by name against the folders listed in the carb
-# setting ``app.sensors.nv.lidar.profileBaseFolder``; ``SimBridgeNode`` appends
-# RTX_LIDAR_CONFIG_DIR to that list before creating the sensor.
-RTX_LIDAR_CONFIG_DIR: str = os.path.join(os.path.dirname(__file__), "lidar_configs")
-RTX_LIDAR_CONFIG: str = "Create3_Planar_Lidar"
+# Tuned for a small indoor robot (radius ~0.17 m).  The stock "Example_Rotary_2D"
+# preset has nearRangeM=0.3 (a blind ring unusable up close) and a beam tilted
+# 2 deg down into the floor; this profile drops nearRangeM to 0.05, keeps the beam
+# horizontal (see RTX_LIDAR_EMITTER_STATE), and sets farRangeM=20 m — above the SLAM
+# max_laser_range (15 m) and costmap raytrace_max_range (12 m), so those YAML values
+# remain the effective limit.
+RTX_LIDAR_CORE_PROFILE: dict = {
+    # Scan geometry
+    "omni:sensor:Core:scanType": "ROTARY",
+    "omni:sensor:Core:rotationDirection": "CW",
+    "omni:sensor:Core:rayType": "IDEALIZED",
+    "omni:sensor:Core:startAzimuthOffsetDeg": 0.0,
+    # Range
+    "omni:sensor:Core:nearRangeM": 0.05,
+    "omni:sensor:Core:farRangeM": 20.0,
+    "omni:sensor:Core:rangeResolutionM": 0.004,
+    "omni:sensor:Core:rangeAccuracyM": 0.02,
+    # Single planar beam
+    "omni:sensor:Core:numberOfEmitters": 1,
+    "omni:sensor:Core:numberOfChannels": 1,
+    "omni:sensor:Core:maxReturns": 1,
+    # Rates
+    "omni:sensor:Core:scanRateBaseHz": 30,
+    "omni:sensor:Core:reportRateBaseHz": 32000,
+    # Optics / returns
+    "omni:sensor:Core:avgPowerW": 0.002,
+    "omni:sensor:Core:minReflectance": 0.1,
+    "omni:sensor:Core:minReflectionRangeM": 20.0,
+    "omni:sensor:Core:waveLengthNm": 903.0,
+    "omni:sensor:Core:pulseTimeNs": 6,
+    # Noise
+    "omni:sensor:Core:azimuthErrorMean": 0.0,
+    "omni:sensor:Core:azimuthErrorStd": 0.015,
+    "omni:sensor:Core:elevationErrorMean": 0.0,
+    "omni:sensor:Core:elevationErrorStd": 0.0,
+    # Intensity
+    "omni:sensor:Core:intensityProcessing": "NORMALIZATION",
+    "omni:sensor:Core:intensityMappingType": "LINEAR",
+}
+
+# Emitter-state instance applied by OmniSensorGenericLidarCoreAPI (schema default).
+RTX_LIDAR_EMITTER_STATE_NAME: str = "s001"
+
+# Single horizontal emitter on channel 1.  elevationDeg=0 keeps the planar scan
+# horizontal; the Example_Rotary_2D preset used -2 deg, tilting the beam into the
+# floor (phantom ring at ~3.4 m for a 0.12 m mount height).  These arrays have
+# numberOfEmitters (= 1) elements each.
+RTX_LIDAR_EMITTER_STATE: dict = {
+    "azimuthDeg": [0.0],
+    "elevationDeg": [0.0],
+    "fireTimeNs": [0],
+    "channelId": [1],
+}
 
 # Height of the lidar above the robot's base_link origin (metres)
 RTX_LIDAR_HEIGHT_OFFSET: float = 0.12

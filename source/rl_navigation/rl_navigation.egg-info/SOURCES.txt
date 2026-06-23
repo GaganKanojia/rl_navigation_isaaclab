@@ -16,14 +16,13 @@ rl_navigation/ros2_bridge/__init__.py
 rl_navigation/ros2_bridge/sim_bridge_node.py
 rl_navigation/sensors/__init__.py
 rl_navigation/sensors/camera_cfg.py
-rl_navigation/sensors/lidar_cfg.py
+rl_navigation/sensors/rtx_lidar_cfg.py
+rl_navigation/sensors/lidar_configs/Create3_Planar_Lidar.json
 rl_navigation/tasks/__init__.py
 rl_navigation/tasks/direct/__init__.py
 rl_navigation/tasks/direct/rl_navigation/__init__.py
 rl_navigation/tasks/direct/rl_navigation/navigation_env.py
 rl_navigation/tasks/direct/rl_navigation/navigation_env_cfg.py
-rl_navigation/tasks/direct/rl_navigation/rl_navigation_env.py
-rl_navigation/tasks/direct/rl_navigation/rl_navigation_env_cfg.py
 rl_navigation/tasks/direct/rl_navigation/agents/__init__.py
 rl_navigation/utils/__init__.py
 rl_navigation/utils/occupancy_grid.py
