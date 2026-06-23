@@ -67,19 +67,39 @@ def main():
     env = gym.make(args_cli.task, cfg=env_cfg)
     unwrapped = env.unwrapped
 
-    # Optionally load trained agent
+    # Optionally load trained agent. Inference MUST go through the SB3 wrapper
+    # (and VecNormalize, if the model was trained with it) so observations are in
+    # the exact format/normalization the policy expects — predicting on the raw
+    # torch obs dict would be wrong.
     agent = None
+    sb3_env = None
     if args_cli.checkpoint is not None:
+        from pathlib import Path
+
         from stable_baselines3 import PPO
+        from stable_baselines3.common.vec_env import VecNormalize
 
         from isaaclab_tasks.utils.wrappers.sb3 import Sb3VecEnvWrapper
 
         sb3_env = Sb3VecEnvWrapper(env)
+
+        # Load saved normalization stats if present next to the checkpoint.
+        vec_norm_path = Path(args_cli.checkpoint.replace("/model", "/model_vecnormalize").replace(".zip", ".pkl"))
+        if vec_norm_path.exists():
+            print(f"[INFO]: Loading normalization: {vec_norm_path}")
+            sb3_env = VecNormalize.load(str(vec_norm_path), sb3_env)
+            sb3_env.training = False
+            sb3_env.norm_reward = False
+
         agent = PPO.load(args_cli.checkpoint, env=sb3_env, device=unwrapped.device)
         print(f"[INFO]: Loaded checkpoint: {args_cli.checkpoint}")
 
-    # Reset environment first (scene must exist before creating OmniGraph)
-    obs, _ = env.reset()
+    # Reset environment first (scene must exist before creating OmniGraph). Reset
+    # through the SB3 wrapper in agent mode so `obs` matches what the policy sees.
+    if agent is not None:
+        obs = sb3_env.reset()
+    else:
+        env.reset()
     sim_dt = env_cfg.sim.dt * env_cfg.decimation
 
     # Create OmniGraph ROS2 bridge (no rclpy.init() needed)
@@ -97,25 +117,22 @@ def main():
                 # Determine action
                 action_override = bridge.get_action_override()
 
-                if args_cli.manual:
-                    # Manual mode: use /cmd_vel or zero
-                    if action_override is not None:
+                if agent is not None:
+                    # Agent mode: step through the SB3 wrapper so obs stays in the
+                    # policy's format/normalization across iterations.
+                    if args_cli.allow_override and action_override is not None:
+                        # /cmd_vel takes precedence; pass override as numpy actions.
+                        actions = action_override.cpu().numpy()
+                    else:
+                        actions, _ = agent.predict(obs, deterministic=True)
+                    obs, _, _, _ = sb3_env.step(actions)
+                else:
+                    # Manual or zero mode: drive the raw env with torch actions.
+                    if args_cli.manual and action_override is not None:
                         actions = action_override
                     else:
                         actions = torch.zeros(1, 2, device=unwrapped.device)
-                elif agent is not None:
-                    if args_cli.allow_override and action_override is not None:
-                        # Override mode: /cmd_vel takes precedence
-                        actions = action_override
-                    else:
-                        # Agent mode
-                        actions, _ = agent.predict(obs, deterministic=True)
-                else:
-                    # No agent, no manual flag — just zero actions
-                    actions = torch.zeros(1, 2, device=unwrapped.device)
-
-                # Step the environment (triggers OnPlaybackTick -> OmniGraph publishes odom, TF, clock)
-                obs, _, _, _, _ = env.step(actions)
+                    env.step(actions)
 
                 # RTX Lidar publishes /scan automatically via OmniGraph — no manual update needed
                 bridge.publish_sensor_data(0.0)

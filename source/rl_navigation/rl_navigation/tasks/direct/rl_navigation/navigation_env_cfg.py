@@ -51,7 +51,7 @@ class NavigationEnvCfg(DirectRLEnvCfg):
     terrain = TerrainImporterCfg(
         prim_path="/World/ground",
         terrain_type="usd",
-        usd_path="/workspace/rl_isaaclab/rl_navigation/config/simple_room.usd",
+        usd_path="/workspace/rl_isaaclab/rl_navigation_isaaclab/config/simple_room.usd",
     )
 
     # --- Scene ---

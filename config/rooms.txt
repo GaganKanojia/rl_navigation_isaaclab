@@ -1,8 +1,13 @@
 # Room configuration file
-# Format: <room_usd_path> <room_grid_npy_path>
+# Format: <room_usd_path> <room_map_path>
 # Lines starting with # are comments
 #
+# The map token is a slam_toolbox / nav2_map_saver map: list either the .yaml or
+# the .pgm (or the basename). The sibling file is derived by basename, so both
+# need not be listed. Generate the map by running ros2_nav2_sim.py + slam_toolbox,
+# then `ros2 run nav2_map_saver map_saver_cli -f <path>/simple_room`.
+#
 # Example:
-# /path/to/room1.usd /path/to/room1_grid.npy
-# /path/to/room2.usd /path/to/room2_grid.npy
-/workspace/rl_isaaclab/rl_navigation/config/simple_room.usd
+# /path/to/room1.usd /path/to/room1.yaml
+# /path/to/room2.usd /path/to/room2.yaml
+/workspace/rl_isaaclab/rl_navigation_isaaclab/config/simple_room.usd /workspace/rl_isaaclab/rl_navigation_isaaclab/config/simple_room.yaml

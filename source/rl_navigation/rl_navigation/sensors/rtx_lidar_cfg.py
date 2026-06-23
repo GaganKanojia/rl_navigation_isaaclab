@@ -13,11 +13,25 @@ The sensor prim is created at runtime by ``SimBridgeNode._setup_rtx_lidar()``
 using the constants defined here.
 """
 
+import os
+
 # Prim path of the RTX Lidar sensor (absolute, for env_0 in Nav2 / single-env mode)
 RTX_LIDAR_PRIM_PATH: str = "/World/envs/env_0/Robot/create_3/base_link/rtx_lidar"
 
-# Isaac Sim sensor preset — "Example_Rotary_2D" is a single-channel 360° rotating lidar
-RTX_LIDAR_CONFIG: str = "Example_Rotary_2D"
+# Custom RTX Lidar profile shipped with this package.
+#
+# The stock Isaac Sim preset "Example_Rotary_2D" has nearRangeM=1.0 (a 1 m blind
+# ring — unusable for a 0.17 m-radius indoor robot) and a beam tilted 2 deg down
+# into the floor.  "Create3_Planar_Lidar" (see lidar_configs/) fixes both:
+# nearRangeM=0.05, horizontal beam, farRangeM=20 m (above the SLAM max_laser_range
+# of 15 m and costmap raytrace_max_range of 12 m, so those YAML values stay the
+# effective limit).
+#
+# Isaac Sim resolves a config by name against the folders listed in the carb
+# setting ``app.sensors.nv.lidar.profileBaseFolder``; ``SimBridgeNode`` appends
+# RTX_LIDAR_CONFIG_DIR to that list before creating the sensor.
+RTX_LIDAR_CONFIG_DIR: str = os.path.join(os.path.dirname(__file__), "lidar_configs")
+RTX_LIDAR_CONFIG: str = "Create3_Planar_Lidar"
 
 # Height of the lidar above the robot's base_link origin (metres)
 RTX_LIDAR_HEIGHT_OFFSET: float = 0.12

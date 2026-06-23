@@ -29,8 +29,10 @@ python scripts/sb3/train.py --task=Create3-Navigation-Direct-v0 --num_envs=4096 
 # Evaluate trained agent
 python scripts/sb3/play.py --task=Create3-Navigation-Direct-v0 --checkpoint=<path/to/model.zip>
 
-# Precompute occupancy grid from room USD
-python scripts/precompute_grid.py --usd_path=/path/to/room.usd --output_path=/path/to/room_grid.npy
+# Occupancy grids for RL training come from SLAM (slam_toolbox) maps — see the
+# Nav2 Integration section. Build a map with ros2_nav2_sim.py + slam_toolbox, save
+# it with `ros2 run nav2_map_saver map_saver_cli -f <path>/room`, then list the
+# room USD + map (.yaml) in config/rooms.txt.
 
 # Code formatting (pre-commit hooks: black, flake8, isort, pyupgrade, codespell)
 pre-commit run --all-files
@@ -53,7 +55,7 @@ Extension metadata (version, author, etc.) lives in `source/rl_navigation/config
 ```
 rl_navigation/
 ├── config/
-│   ├── rooms.txt                          # Room USD + grid path pairs
+│   ├── rooms.txt                          # Room USD + SLAM map (.yaml/.pgm) pairs
 │   ├── ros2_bridge.yaml                   # ROS2 topic names, kinematic params
 │   └── nav2/                              # Nav2 stack configuration
 │       ├── nav2_params.yaml               # Nav2 controller, planner, costmaps
@@ -62,7 +64,6 @@ rl_navigation/
 ├── scripts/
 │   ├── sb3/train.py                       # SB3 PPO training loop
 │   ├── sb3/play.py                        # Inference/playback
-│   ├── precompute_grid.py                 # Offline occupancy grid generation
 │   ├── ros2_sim.py                        # Single-env sim + ROS2 bridge
 │   ├── ros2_nav2_sim.py                   # Nav2 integration (exploration + navigation)
 │   ├── ros2_teleop.py                     # Keyboard teleop (/cmd_vel)
@@ -73,7 +74,9 @@ rl_navigation/
         ├── robots/
         │   └── create3.py                 # CREATE3_CFG ArticulationCfg
         ├── sensors/
-        │   ├── lidar_cfg.py               # LIDAR_CFG RayCasterCfg (360° planar)
+        │   ├── rtx_lidar_cfg.py           # RTX Lidar profile (360° planar, custom config)
+        │   ├── lidar_configs/             # Custom RTX Lidar JSON profiles
+        │   │   └── Create3_Planar_Lidar.json
         │   └── camera_cfg.py              # CAMERA_CFG CameraCfg (front RGB-D)
         ├── ros2_bridge/
         │   ├── __init__.py                # Conditional rclpy import
@@ -100,10 +103,10 @@ rl_navigation/
 - Physics at 120 Hz with decimation=2 (control at 60 Hz)
 
 **Navigation environment specifics:**
-- Dict observation space: lidar(360), occupancy_grid(1×50×50), goal_pose(3), velocity(3)
-- Custom `NavigationFeaturesExtractor` with 2D CNN (grid) + 1D CNN (lidar) → 134-dim features
+- Dict observation space: occupancy_grid(1×50×50), goal_pose(3), velocity(3) — lidar is NOT a direct observation (the SLAM occupancy map is the spatial input)
+- Custom `NavigationFeaturesExtractor` with a 2D CNN on the grid (→64) concatenated with goal_pose(3) + velocity(3) → 70-dim features
 - SB3 `MultiInputPolicy` with custom feature extractor resolved from YAML string path
-- Occupancy grids precomputed offline from room USD meshes via `scripts/precompute_grid.py`
+- Occupancy grids come from slam_toolbox maps (`.pgm`/`.yaml`) listed in `config/rooms.txt`, loaded by `utils/scene_loader.py`
 - All parallel envs share the same room (required by `replicate_physics=True`); different rooms via `room_index` config
 - User must provide Create 3 USD file and update joint names in `robots/create3.py`
 - Front-facing RGB-D camera is opt-in via `enable_camera` config flag (disabled during large-scale training to save GPU memory)
@@ -142,11 +145,16 @@ python scripts/ros2_teleop.py
 | `/odom` | `nav_msgs/Odometry` | Published | Best-effort |
 | `/tf` | `tf2_msgs/TFMessage` | Published | Best-effort |
 | `/tf_static` | `tf2_msgs/TFMessage` | Published (once) | Transient-local |
-| `/camera/rgb/image_raw` | `sensor_msgs/Image` (rgb8) | Published | Best-effort |
-| `/camera/depth/image_raw` | `sensor_msgs/Image` (32FC1) | Published | Best-effort |
-| `/occupancy_grid` | `nav_msgs/OccupancyGrid` | Published once | Transient-local |
+| `/clock` | `rosgraph_msgs/Clock` | Published | — |
 | `/cmd_vel` | `geometry_msgs/Twist` | Subscribed | Best-effort |
-| `/goal_pose` | `geometry_msgs/PoseStamped` | Subscribed | Best-effort |
+
+> The OmniGraph bridge (`SimBridgeNode`) publishes only the sensor/clock topics above
+> and subscribes to `/cmd_vel`. The front RGB-D camera prim exists in the scene (it
+> backs the env's camera observation) and its `base_link → camera_link` TF is
+> published, but **camera image topics are not bridged to ROS2**. There is likewise
+> **no `/occupancy_grid` publisher and no `/goal_pose` subscriber** in the bridge —
+> in Nav2 mode the map comes from slam_toolbox and goals go to the `navigate_to_pose`
+> action server.
 
 ### TF Tree
 
@@ -167,7 +175,9 @@ source/rl_navigation/rl_navigation/
 │   ├── __init__.py              # Direct import (no rclpy dependency)
 │   └── sim_bridge_node.py       # SimBridgeNode (OmniGraph-based)
 ├── sensors/
-│   ├── lidar_cfg.py             # LIDAR_CFG (360° planar)
+│   ├── rtx_lidar_cfg.py         # RTX Lidar profile (360° planar, custom config)
+│   ├── lidar_configs/           # Custom RTX Lidar JSON profiles
+│   │   └── Create3_Planar_Lidar.json
 │   └── camera_cfg.py            # CAMERA_CFG (front RGB-D, 320×240)
 scripts/
 ├── ros2_sim.py                  # Single-env sim + ROS2 bridge
@@ -186,10 +196,11 @@ config/
 - Camera excluded from training observation space (320×240 RGBD × 4096 envs = ~2.4GB GPU memory)
 - Bridge uses OmniGraph (`isaacsim.ros2.bridge` extension) — no direct `rclpy` import, avoids Python version conflicts
 - Odometry and TF driven automatically by `IsaacComputeOdometry` OmniGraph node from USD prim data
-- LaserScan depth data fed from Isaac Lab's RayCaster sensor each step
-- `/cmd_vel` persists last command with safety timeout (0.5s) — zeros velocity if no new command received
+- `/scan` published by an **RTX Lidar** sensor (ray-traces all scene geometry) via the `ROS2RtxLidarHelper` OmniGraph node — fully automatic, no Python-side update
+- RTX Lidar uses the bundled custom profile **`Create3_Planar_Lidar`** (`sensors/lidar_configs/`) instead of the stock `Example_Rotary_2D` preset: `nearRangeM=0.05` (vs 1.0 — avoids a 1 m blind ring around the small robot), horizontal beam (`elevationDeg=0.0`, vs -2° tilt into the floor), `farRangeM=20 m` (above the SLAM/costmap range limits). The profile folder is registered at runtime via the `app.sensors.nv.lidar.profileBaseFolder` carb setting in `SimBridgeNode._setup_rtx_lidar()`.
+- `/cmd_vel` is read from the OmniGraph Twist subscriber, which holds the last received value persistently — the bridge cannot detect individual message arrivals, so once any non-zero command is seen it treats subsequent values (including zeros) as intentional. There is no per-message safety timeout in the OmniGraph bridge (the `cmd_vel_timeout` in `config/ros2_bridge.yaml` is reference-only and not loaded)
 - TF, odometry, and clock published every tick by OmniGraph; only scan data requires Python update
-- Create 3 kinematics: wheel_base=0.233m, wheel_radius=0.036m (configured in `config/ros2_bridge.yaml`)
+- Create 3 kinematics: wheel_base=0.233m, wheel_radius=0.036m (hardcoded as `WHEEL_BASE`/`WHEEL_RADIUS` in `ros2_bridge/sim_bridge_node.py`; `config/ros2_bridge.yaml` is reference-only and **not** loaded at runtime)
 
 ## Nav2 Integration
 
@@ -231,7 +242,8 @@ python scripts/ros2_nav2_sim.py --mode exploration --disable_fabric
 
 # Terminal 2 — SLAM Toolbox (builds map from lidar)
 ros2 launch slam_toolbox online_async_launch.py \
-  slam_params_file:=$PWD/config/nav2/slam_toolbox_params.yaml
+  slam_params_file:=$PWD/config/nav2/slam_toolbox_params.yaml \
+  use_sim_time:=true
 
 # Terminal 3 — Nav2 stack (path planning + obstacle avoidance)
 ros2 launch $PWD/config/nav2/navigation_launch.py \
@@ -267,7 +279,8 @@ python scripts/ros2_nav2_sim.py --mode navigation --disable_fabric
 
 # Terminal 2 — SLAM Toolbox
 ros2 launch slam_toolbox online_async_launch.py \
-  slam_params_file:=$PWD/config/nav2/slam_toolbox_params.yaml
+  slam_params_file:=$PWD/config/nav2/slam_toolbox_params.yaml \
+  use_sim_time:=true
 
 # Terminal 3 — Nav2 stack
 ros2 launch $PWD/config/nav2/navigation_launch.py \
@@ -277,14 +290,17 @@ ros2 launch $PWD/config/nav2/navigation_launch.py \
 ros2 launch nav2_bringup rviz_launch.py
 ```
 
-Send a goal via CLI:
+Send a goal via the `navigate_to_pose` action (Nav2 exposes an action server, **not**
+a `/goal_pose` topic subscriber):
 
 ```bash
-ros2 topic pub --once /goal_pose geometry_msgs/PoseStamped \
-  "{header: {frame_id: 'map'}, pose: {position: {x: 3.0, y: 2.0, z: 0.0}, orientation: {w: 1.0}}}"
+ros2 action send_goal /navigate_to_pose nav2_msgs/action/NavigateToPose \
+  "{pose: {header: {frame_id: 'map'}, pose: {position: {x: 3.0, y: 2.0, z: 0.0}, orientation: {w: 1.0}}}}"
 ```
 
-Or use the RViz2 **"2D Goal Pose"** button to set goals interactively.
+Or use the RViz2 **"Nav2 Goal"** tool to set goals interactively. (The default RViz
+**"2D Goal Pose"** tool only publishes to `/goal_pose`, which nothing in the Nav2
+stack consumes, so it will not start navigation.)
 
 ### Nav2 Configuration
 
@@ -293,11 +309,11 @@ All Nav2 configuration files are in `config/nav2/`:
 | File | Description |
 |---|---|
 | `nav2_params.yaml` | DWB controller, NavFn planner, costmaps, recovery behaviors — tuned for Create 3 kinematics |
-| `slam_toolbox_params.yaml` | Online async SLAM with 360° lidar, 15m range, loop closure enabled |
+| `slam_toolbox_params.yaml` | Online async SLAM with 360° RTX lidar (0.05–20m sensor range, 15m SLAM max), loop closure enabled |
 | `exploration_params.yaml` | Frontier explorer (m-explore-next) parameters |
 
 Key parameters matching Create 3 kinematics:
-- `max_vel_x: 0.5 m/s`, `max_vel_theta: 1.9 rad/s`
+- `max_vel_x: 0.22 m/s`, `max_vel_theta: 1.9 rad/s`
 - `robot_radius: 0.17 m`
 - Costmap resolution: 0.05 m/cell
 - Inflation radius: 0.30 m

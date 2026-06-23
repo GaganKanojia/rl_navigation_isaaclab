@@ -65,7 +65,8 @@ NAV2_INSTRUCTIONS = {
 
   Terminal 2 — SLAM Toolbox:
     ros2 launch slam_toolbox online_async_launch.py \\
-      slam_params_file:=$PWD/config/nav2/slam_toolbox_params.yaml
+      slam_params_file:=$PWD/config/nav2/slam_toolbox_params.yaml \\
+      use_sim_time:=true
 
   Terminal 3 — Nav2 Stack:
     ros2 launch $PWD/config/nav2/navigation_launch.py \\
@@ -88,7 +89,8 @@ NAV2_INSTRUCTIONS = {
 
   Terminal 2 — SLAM Toolbox:
     ros2 launch slam_toolbox online_async_launch.py \\
-      slam_params_file:=$PWD/config/nav2/slam_toolbox_params.yaml
+      slam_params_file:=$PWD/config/nav2/slam_toolbox_params.yaml \\
+      use_sim_time:=true
 
   Terminal 3 — Nav2 Stack:
     ros2 launch $PWD/config/nav2/navigation_launch.py \\
@@ -97,11 +99,11 @@ NAV2_INSTRUCTIONS = {
   Terminal 4 (optional) — RViz2 Visualization:
     ros2 launch nav2_bringup rviz_launch.py
 
-  Send a goal via CLI:
-    ros2 topic pub --once /goal_pose geometry_msgs/PoseStamped \\
-      "{header: {frame_id: 'map'}, pose: {position: {x: 3.0, y: 2.0, z: 0.0}, orientation: {w: 1.0}}}"
+  Send a goal via the navigate_to_pose action (Nav2 has no /goal_pose subscriber):
+    ros2 action send_goal /navigate_to_pose nav2_msgs/action/NavigateToPose \\
+      "{pose: {header: {frame_id: 'map'}, pose: {position: {x: 3.0, y: 2.0, z: 0.0}, orientation: {w: 1.0}}}}"
 
-  Or use the RViz2 "2D Goal Pose" button to set goals interactively.
+  Or use the RViz2 "Nav2 Goal" tool to set goals interactively.
 ================================================================================
 """,
 }

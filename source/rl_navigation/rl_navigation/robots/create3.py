@@ -11,7 +11,7 @@ from isaaclab.assets import ArticulationCfg
 
 CREATE3_CFG = ArticulationCfg(
     spawn=sim_utils.UsdFileCfg(
-        usd_path="/workspace/rl_isaaclab/rl_navigation/config/irobot_rvc.usd",
+        usd_path="/workspace/rl_isaaclab/rl_navigation_isaaclab/config/irobot_rvc.usd",
         activate_contact_sensors=True,
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
             rigid_body_enabled=True,

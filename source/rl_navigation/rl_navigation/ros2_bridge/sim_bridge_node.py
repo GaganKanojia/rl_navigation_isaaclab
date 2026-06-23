@@ -31,6 +31,7 @@ from rl_navigation.sensors.camera_cfg import (
 )
 from rl_navigation.sensors.rtx_lidar_cfg import (
     RTX_LIDAR_CONFIG,
+    RTX_LIDAR_CONFIG_DIR,
     RTX_LIDAR_FRAME_ID,
     RTX_LIDAR_HEIGHT_OFFSET,
     RTX_LIDAR_PRIM_PATH,
@@ -97,6 +98,19 @@ class SimBridgeNode:
         from isaacsim.core.utils.extensions import enable_extension
 
         enable_extension("isaacsim.sensors.rtx")
+
+        # Register this package's lidar_configs folder so the custom
+        # "Create3_Planar_Lidar" profile is resolvable by name.  Isaac Sim looks up
+        # configs in the folders listed in app.sensors.nv.lidar.profileBaseFolder, so
+        # we append ours rather than overwrite the built-in search paths.
+        import carb
+
+        settings = carb.settings.get_settings()
+        profile_setting = "/app/sensors/nv/lidar/profileBaseFolder"
+        profile_folders = list(settings.get(profile_setting) or [])
+        if RTX_LIDAR_CONFIG_DIR not in profile_folders:
+            profile_folders.append(RTX_LIDAR_CONFIG_DIR)
+            settings.set_string_array(profile_setting, profile_folders)
 
         # Create RTX Lidar prim using Isaac Sim command
         _, self._lidar_prim = omni.kit.commands.execute(
