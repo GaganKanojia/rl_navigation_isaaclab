@@ -74,9 +74,7 @@ rl_navigation/
         ├── robots/
         │   └── create3.py                 # CREATE3_CFG ArticulationCfg
         ├── sensors/
-        │   ├── rtx_lidar_cfg.py           # RTX Lidar profile (360° planar, custom config)
-        │   ├── lidar_configs/             # Custom RTX Lidar JSON profiles
-        │   │   └── Create3_Planar_Lidar.json
+        │   ├── rtx_lidar_cfg.py           # RTX Lidar profile (360° planar OmniLidar, USD attributes)
         │   └── camera_cfg.py              # CAMERA_CFG CameraCfg (front RGB-D)
         ├── ros2_bridge/
         │   ├── __init__.py                # Conditional rclpy import
@@ -117,7 +115,7 @@ The ROS2 bridge runs a single-env simulation connected to ROS2 topics via Isaac 
 
 ### Prerequisites
 
-- Isaac Sim 5.1+ with `isaacsim.ros2.bridge` extension enabled
+- Isaac Sim 5.1+ with `isaacsim.ros2.bridge` extension enabled. **Isaac Sim 5.0+ is the hard minimum for the bridge** — the RTX Lidar is created as an `OmniLidar` prim configured via `omni:sensor:Core:*` USD attributes, which earlier releases do not support (they used JSON lidar profiles). RL training alone still runs on Isaac Sim 4.5+.
 - ROS2 Jazzy installed for Nav2/SLAM nodes (`source /opt/ros/jazzy/setup.bash`)
 - Extension installed (`pip install -e source/rl_navigation`)
 
@@ -175,9 +173,7 @@ source/rl_navigation/rl_navigation/
 │   ├── __init__.py              # Direct import (no rclpy dependency)
 │   └── sim_bridge_node.py       # SimBridgeNode (OmniGraph-based)
 ├── sensors/
-│   ├── rtx_lidar_cfg.py         # RTX Lidar profile (360° planar, custom config)
-│   ├── lidar_configs/           # Custom RTX Lidar JSON profiles
-│   │   └── Create3_Planar_Lidar.json
+│   ├── rtx_lidar_cfg.py         # RTX Lidar profile (360° planar OmniLidar, USD attributes)
 │   └── camera_cfg.py            # CAMERA_CFG (front RGB-D, 320×240)
 scripts/
 ├── ros2_sim.py                  # Single-env sim + ROS2 bridge
@@ -195,9 +191,9 @@ config/
 - ROS2 bridge is standalone — runs with `num_envs=1`, not part of training
 - Camera excluded from training observation space (320×240 RGBD × 4096 envs = ~2.4GB GPU memory)
 - Bridge uses OmniGraph (`isaacsim.ros2.bridge` extension) — no direct `rclpy` import, avoids Python version conflicts
-- Odometry and TF driven automatically by `IsaacComputeOdometry` OmniGraph node from USD prim data
+- Odometry and TF driven automatically by `IsaacComputeOdometry` OmniGraph node from USD prim data. `IsaacComputeOdometry` reports the chassis' **absolute world pose** (the USD spawn location), so a `Subtract` node (`OdomZero`) offsets it by the robot's start position captured at bridge init. The published `/odom` and `odom → base_link` therefore **start at the origin**, matching SLAM Toolbox's map origin so `map → odom` begins as identity. (Exact because Nav2-mode spawn yaw is identity — a pure translation offset; see `SimBridgeNode._setup_graph()`.)
 - `/scan` published by an **RTX Lidar** sensor (ray-traces all scene geometry) via the `ROS2RtxLidarHelper` OmniGraph node — fully automatic, no Python-side update
-- RTX Lidar uses the bundled custom profile **`Create3_Planar_Lidar`** (`sensors/lidar_configs/`) instead of the stock `Example_Rotary_2D` preset: `nearRangeM=0.05` (vs 1.0 — avoids a 1 m blind ring around the small robot), horizontal beam (`elevationDeg=0.0`, vs -2° tilt into the floor), `farRangeM=20 m` (above the SLAM/costmap range limits). The profile folder is registered at runtime via the `app.sensors.nv.lidar.profileBaseFolder` carb setting in `SimBridgeNode._setup_rtx_lidar()`.
+- RTX Lidar is an **`OmniLidar`** prim created in `SimBridgeNode._setup_rtx_lidar()` with a custom Create 3 planar profile applied as `omni:sensor:Core:*` USD attributes (`RTX_LIDAR_CORE_PROFILE` / `RTX_LIDAR_EMITTER_STATE` in `sensors/rtx_lidar_cfg.py`): `nearRangeM=0.05` (vs the stock 0.3 — avoids a blind ring around the small robot), horizontal beam (`elevationDeg=0.0`, vs the -2° tilt into the floor), `farRangeM=20 m` (above the SLAM/costmap range limits). Isaac Sim 5.0 dropped JSON lidar profiles for `OmniLidar` prims, so the profile is authored via USD attributes rather than a config file registered through `app.sensors.nv.lidar.profileBaseFolder`.
 - `/cmd_vel` is read from the OmniGraph Twist subscriber, which holds the last received value persistently — the bridge cannot detect individual message arrivals, so once any non-zero command is seen it treats subsequent values (including zeros) as intentional. There is no per-message safety timeout in the OmniGraph bridge (the `cmd_vel_timeout` in `config/ros2_bridge.yaml` is reference-only and not loaded)
 - TF, odometry, and clock published every tick by OmniGraph; only scan data requires Python update
 - Create 3 kinematics: wheel_base=0.233m, wheel_radius=0.036m (hardcoded as `WHEEL_BASE`/`WHEEL_RADIUS` in `ros2_bridge/sim_bridge_node.py`; `config/ros2_bridge.yaml` is reference-only and **not** loaded at runtime)
