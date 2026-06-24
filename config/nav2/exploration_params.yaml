@@ -15,10 +15,13 @@ explore_node:
     costmap_updates_topic: /global_costmap/costmap_updates
     visualize: true
     planner_frequency: 0.5
-    progress_timeout: 30.0
-    potential_scale: 3.0
+    progress_timeout: 40.0
+    # cost = potential_scale*distance - gain_scale*size - orientation_scale*orientation (lowest cost wins).
+    # 4.0 strengthens the distance penalty: clear nearby area fully before crossing the home to a big far frontier
+    # (methodical room-by-room vacuum coverage). Field-tunable in 3.0-5.0; lower if it dawdles, higher if it still wanders.
+    potential_scale: 4.0
     orientation_scale: 0.0
     gain_scale: 1.0
     transform_tolerance: 0.3
-    min_frontier_size: 0.5
-    return_to_init: false
+    min_frontier_size: 0.2   # meters (cells x 0.05). Catch ~0.2 m gaps behind furniture; 4 cells still rejects single-cell speckle
+    return_to_init: true

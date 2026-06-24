@@ -305,7 +305,7 @@ All Nav2 configuration files are in `config/nav2/`:
 | File | Description |
 |---|---|
 | `nav2_params.yaml` | DWB controller, NavFn planner, costmaps, recovery behaviors — tuned for Create 3 kinematics |
-| `slam_toolbox_params.yaml` | Online async SLAM with 360° RTX lidar (0.05–20m sensor range, 15m SLAM max), loop closure enabled |
+| `slam_toolbox_params.yaml` | Online async SLAM with 360° RTX lidar (lidar reaches 20 m; SLAM `max_laser_range=12 m` since indoor returns past ~12 m are sparse/noisy), conservative loop closure |
 | `exploration_params.yaml` | Frontier explorer (m-explore-next) parameters |
 
 Key parameters matching Create 3 kinematics:

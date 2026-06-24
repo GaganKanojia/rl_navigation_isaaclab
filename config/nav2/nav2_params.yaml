@@ -30,7 +30,7 @@ controller_server:
     controller_frequency: 20.0
     costmap_update_timeout: 0.30
     min_x_velocity_threshold: 0.001
-    min_y_velocity_threshold: 0.5
+    min_y_velocity_threshold: 0.001  # diff-drive: vy is always 0; 0.5 was a holonomic leftover that masked odom y-velocity feedback
     min_theta_velocity_threshold: 0.001
     failure_tolerance: 0.3
     progress_checker_plugins: ["progress_checker"]
@@ -45,13 +45,13 @@ controller_server:
     general_goal_checker:
       stateful: true
       plugin: "nav2_controller::SimpleGoalChecker"
-      xy_goal_tolerance: 0.3
+      xy_goal_tolerance: 0.25  # tighter for dock-style stop precision (robot radius 0.17 m); still reachable for a slow diff-drive
       yaw_goal_tolerance: 0.25
 
     FollowPath:
       plugin: "dwb_core::DWBLocalPlanner"
       debug_trajectory_details: true
-      min_vel_x: -0.1
+      min_vel_x: 0.0  # forward-only NORMAL nav. Reverse is left to the `backup` recovery, which shares cmd_vel_nav with the controller and routes through velocity_smoother (see its min_velocity comment), so keep the smoother's reverse limit. Lidar is 360°, so this is a coverage choice, not a blind-spot fix.
       min_vel_y: 0.0
       max_vel_x: 0.22
       max_vel_y: 0.0
@@ -67,22 +67,22 @@ controller_server:
       decel_lim_theta: -2.0
       vx_samples: 20
       vy_samples: 1
-      vtheta_samples: 20
+      vtheta_samples: 40
       sim_time: 1.5
       linear_granularity: 0.05
       angular_granularity: 0.025
       transform_tolerance: 0.2
-      xy_goal_tolerance: 0.3
+      xy_goal_tolerance: 0.25  # keep consistent with general_goal_checker
       trans_stopped_velocity: 0.05
       short_circuit_trajectory_evaluation: true
       stateful: true
       critics: ["RotateToGoal", "Oscillation", "BaseObstacle", "GoalAlign", "PathAlign", "PathDist", "GoalDist"]
       BaseObstacle.scale: 0.02
-      PathAlign.scale: 32.0
+      PathAlign.scale: 40.0   # track the planned path along walls; above GoalAlign so it doesn't shortcut across open rooms
       PathAlign.forward_point_distance: 0.1
       GoalAlign.scale: 24.0
       GoalAlign.forward_point_distance: 0.1
-      PathDist.scale: 32.0
+      PathDist.scale: 48.0    # strong path adherence (2:1 over GoalDist) -> room-by-room coverage instead of beelining to the goal
       GoalDist.scale: 24.0
       RotateToGoal.scale: 32.0
       RotateToGoal.slowing_factor: 5.0
@@ -148,14 +148,14 @@ local_costmap:
           clearing: true
           marking: true
           data_type: "LaserScan"
-          raytrace_max_range: 12.0
+          raytrace_max_range: 3.5
           raytrace_min_range: 0.12
-          obstacle_max_range: 10.0
+          obstacle_max_range: 3.0
           obstacle_min_range: 0.15
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 3.0
-        inflation_radius: 0.30
+        cost_scaling_factor: 8.0   # fast cost decay -> low cost just outside the 0.17 m inscribed radius, so the robot hugs walls/baseboards
+        inflation_radius: 0.20      # local: small halo to squeeze doorways. min-cost lane = W - 2*0.20, so a 0.70 m door keeps a 0.30 m clear lane
       always_send_full_costmap: true
 
 global_costmap:
@@ -183,14 +183,14 @@ global_costmap:
           clearing: true
           marking: true
           data_type: "LaserScan"
-          raytrace_max_range: 12.0
+          raytrace_max_range: 3.5
           raytrace_min_range: 0.12
-          obstacle_max_range: 10.0
+          obstacle_max_range: 3.0
           obstacle_min_range: 0.15
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 3.0
-        inflation_radius: 0.30
+        cost_scaling_factor: 8.0   # match local: cost decays quickly past the inscribed radius (wall-hugging)
+        inflation_radius: 0.22      # global: slightly larger than local (0.20) for smoother routes that still pass a 0.70 m door (0.26 m lane)
       always_send_full_costmap: true
 
 velocity_smoother:
@@ -200,6 +200,17 @@ velocity_smoother:
     scale_velocities: false
     feedback: "OPEN_LOOP"
     max_velocity: [0.22, 0.0, 1.9]
+    # Reverse x kept ONLY for the `backup` recovery.
+    # cmd_vel topology (traced from navigation_launch.py remaps):
+    #   controller_server --(remap cmd_vel->cmd_vel_nav)--\
+    #                                                       >-- cmd_vel_nav --> velocity_smoother
+    #   behavior_server    --(remap cmd_vel->cmd_vel_nav)--/   (subscribes via cmd_vel->cmd_vel_nav remap)
+    #         (runs spin/backup/wait)
+    #   velocity_smoother --> cmd_vel_smoothed --> collision_monitor --> /cmd_vel (to sim)
+    # controller_server and behavior_server are PARALLEL publishers to cmd_vel_nav
+    # (the BT activates only one at a time). FollowPath is forward-only (min_vel_x=0.0);
+    # backup needs reverse and DOES pass through this smoother, so keep reverse here
+    # or the backup recovery gets clamped to 0.
     min_velocity: [-0.1, 0.0, -1.9]
     max_accel: [1.0, 0.0, 2.0]
     max_decel: [-1.0, 0.0, -2.0]

@@ -32,15 +32,17 @@ slam_toolbox:
 
     # Map parameters
     resolution: 0.05
-    max_laser_range: 15.0
+    # Deliberate indoor cap, below the lidar's 20 m far range: distant indoor returns (>~12 m) are sparse/noisy and hurt scan matching.
+    # README's costmap table documents this 12 m SLAM max vs the 20 m sensor range.
+    max_laser_range: 12.0
     minimum_time_interval: 0.5
     transform_timeout: 0.2
     tf_buffer_duration: 30.0
     transform_publish_period: 0.02
 
     # Scan matching thresholds
-    minimum_travel_distance: 0.3
-    minimum_travel_heading: 0.3
+    minimum_travel_distance: 0.2
+    minimum_travel_heading: 0.2
     scan_buffer_size: 10
     scan_buffer_maximum_scan_distance: 10.0
 
@@ -49,8 +51,8 @@ slam_toolbox:
     do_loop_closing: true
     loop_match_minimum_chain_size: 10
     loop_match_maximum_variance_coarse: 3.0
-    loop_match_minimum_response_coarse: 0.35
-    loop_match_minimum_response_fine: 0.45
+    loop_match_minimum_response_coarse: 0.40
+    loop_match_minimum_response_fine: 0.55   # stricter fine match: avoid false closures between look-alike hallways/rooms (default 0.45)
 
     # Correlation search parameters
     correlation_search_space_dimension: 0.5
@@ -63,7 +65,7 @@ slam_toolbox:
     loop_search_space_smear_deviation: 0.03
 
     # Map update
-    map_update_interval: 2.0
+    map_update_interval: 1.0
     enable_interactive_mode: false
 
     # Misc
