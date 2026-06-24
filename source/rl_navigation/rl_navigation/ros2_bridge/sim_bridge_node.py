@@ -176,6 +176,15 @@ class SimBridgeNode:
         # Resolve robot prim path for env 0
         robot_prim_path = self._env._robot.root_physx_view.prim_paths[0]
 
+        # Capture the robot's initial world pose so published odometry can be
+        # zeroed at the spawn point.  IsaacComputeOdometry reports the chassis'
+        # absolute world pose (the USD spawn location, ~(1, 1) in Nav2 mode), but
+        # SLAM Toolbox anchors its map frame at the robot's start as (0, 0).  We
+        # subtract this offset (see OdomZero below) so /odom and odom->base_link
+        # start at the origin and map->odom begins as identity.  The bridge is
+        # created after env.reset(), so the spawn pose is already settled here.
+        p0 = self._env._robot.data.root_pos_w[0].cpu().numpy()
+
         (self._graph, self._nodes, _, _) = og.Controller.edit(
             {"graph_path": GRAPH_PATH, "evaluator_name": "execution"},
             {
@@ -186,6 +195,8 @@ class SimBridgeNode:
                     ("ReadSimTime", "isaacsim.core.nodes.IsaacReadSimulationTime"),
                     # --- Odometry (automatic from USD) ---
                     ("ComputeOdom", "isaacsim.core.nodes.IsaacComputeOdometry"),
+                    # Zero odometry at the spawn pose: outputs (position - p0).
+                    ("OdomZero", "omni.graph.nodes.Subtract"),
                     ("PublishOdom", "isaacsim.ros2.bridge.ROS2PublishOdometry"),
                     # --- TF dynamic: odom -> base_link ---
                     ("PublishTF", "isaacsim.ros2.bridge.ROS2PublishRawTransformTree"),
@@ -207,6 +218,9 @@ class SimBridgeNode:
                     ("ReadSimTime.inputs:resetOnStop", False),
                     # Compute odometry from robot chassis
                     ("ComputeOdom.inputs:chassisPrim", [usdrt.Sdf.Path(robot_prim_path)]),
+                    # Subtract the spawn pose (identity yaw in Nav2 mode, so a pure
+                    # translation offset is exact — no rotation correction needed).
+                    ("OdomZero.inputs:b", [float(p0[0]), float(p0[1]), float(p0[2])]),
                     # Odometry publisher
                     ("PublishOdom.inputs:topicName", "odom"),
                     ("PublishOdom.inputs:chassisFrameId", "base_link"),
@@ -276,12 +290,16 @@ class SimBridgeNode:
                     ("ReadSimTime.outputs:simulationTime", "PublishTFCamera.inputs:timeStamp"),
                     ("ReadSimTime.outputs:simulationTime", "PublishClock.inputs:timeStamp"),
                     # --- Odometry data connections ---
-                    ("ComputeOdom.outputs:position", "PublishOdom.inputs:position"),
+                    # Position is routed through OdomZero (position - spawn pose) so
+                    # odom starts at the origin; orientation/velocities pass straight
+                    # through (a constant translation offset does not affect them).
+                    ("ComputeOdom.outputs:position", "OdomZero.inputs:a"),
+                    ("OdomZero.outputs:difference", "PublishOdom.inputs:position"),
                     ("ComputeOdom.outputs:orientation", "PublishOdom.inputs:orientation"),
                     ("ComputeOdom.outputs:linearVelocity", "PublishOdom.inputs:linearVelocity"),
                     ("ComputeOdom.outputs:angularVelocity", "PublishOdom.inputs:angularVelocity"),
                     # --- TF data from odometry ---
-                    ("ComputeOdom.outputs:position", "PublishTF.inputs:translation"),
+                    ("OdomZero.outputs:difference", "PublishTF.inputs:translation"),
                     ("ComputeOdom.outputs:orientation", "PublishTF.inputs:rotation"),
                 ],
             },
